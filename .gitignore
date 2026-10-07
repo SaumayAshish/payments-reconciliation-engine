@@ -1,0 +1,16 @@
+# Build
+target/
+*.class
+*.jar
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+# Secrets and local config (never commit)
+.env
+*.pem
+*.key
+# Generated corpora and benchmark output
+/data/generated/
+jmh-result.json

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test, coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Compile, unit tests (surefire), integration tests (failsafe + Testcontainers, Docker is
+      # available on ubuntu-latest), architecture tests, JaCoCo report and the NFR-08 coverage gate.
+      # The build fails if line coverage on domain and matching drops below 85 percent.
+      - name: Verify
+        run: mvn -B -ntp verify
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          if-no-files-found: ignore
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports
+            target/failsafe-reports
+          if-no-files-found: ignore
+
+  # Placeholders for Phase 11 (master prompt section 42). Listed so the gap is visible, not forgotten.
+  # - dependency vulnerability scan
+  # - secret scan
+  # - container image scan
