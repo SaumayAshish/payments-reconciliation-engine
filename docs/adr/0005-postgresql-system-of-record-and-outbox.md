@@ -1,6 +1,6 @@
 # ADR-0005: PostgreSQL as system of record, JDBC access, and a transactional outbox for events
 
-- Status: **Proposed** (Phase 0, awaiting approval)
+- Status: **Accepted** (approved by Caesar, 2026-10-07)
 - Date: 2026-10-07
 - Related: FR-13, FRD-13, NFR-01, NFR-03, Q-12
 

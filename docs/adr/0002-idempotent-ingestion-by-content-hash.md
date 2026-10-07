@@ -1,6 +1,6 @@
 # ADR-0002: Idempotent ingestion by content hash
 
-- Status: **Proposed** (Phase 0, awaiting approval)
+- Status: **Accepted** (approved by Caesar, 2026-10-07)
 - Date: 2026-10-07
 - Related: FR-01, FRD-01, NFR-03, Q-11
 

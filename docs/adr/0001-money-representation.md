@@ -1,6 +1,6 @@
 # ADR-0001: Money is signed minor units plus an ISO 4217 currency
 
-- Status: **Proposed** (Phase 0, awaiting approval)
+- Status: **Accepted** (approved by Caesar, 2026-10-07)
 - Date: 2026-10-07
 - Related: FRD-02, NFR-05, Q-01
 

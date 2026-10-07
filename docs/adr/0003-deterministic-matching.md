@@ -1,6 +1,6 @@
 # ADR-0003: Deterministic matching and claim resolution
 
-- Status: **Proposed** (Phase 0, awaiting approval)
+- Status: **Accepted** (approved by Caesar, 2026-10-07; scoring formulas in ADR-0003 remain tunable in Phase 2 via amendment)
 - Date: 2026-10-07
 - Related: FR-04, FR-05, FR-10, FRD-04, FRD-05, FRD-10, NFR-02, NFR-04, Q-02, Q-03, Q-04, Q-07
 

@@ -2,7 +2,7 @@
 
 A Java 25 service that ingests bank statements and ledger entries, auto-matches them with a deterministic four-tier engine, and routes everything else to an auditable exceptions queue with maker-checker approval, SLA tracking and a tamper-evident audit trail.
 
-> **Status: Phase 0 (documentation).** No production code exists yet. Nothing below is claimed as working until its row in the status table says so and links evidence.
+> **Status: Phase 0 complete and approved; Phase 1 next.** No production code exists yet. Nothing below is claimed as working until its row in the status table says so and links evidence.
 
 ## Why this exists
 
@@ -12,7 +12,7 @@ Banks lose analyst hours every day matching statement lines to ledger entries, c
 
 | Phase | Scope | Status | Gate evidence |
 | --- | --- | --- | --- |
-| 0 | BRD, FRD, ADRs, architecture, glossary, data spec, runbook, RCA template, repo skeleton | **Awaiting your review** | This repository |
+| 0 | BRD, FRD, ADRs, architecture, glossary, data spec, runbook, RCA template, repo skeleton | **Complete, approved 2026-10-07** | This repository |
 | 1 | Domain model, `Money`, Flyway schema | Not started | |
 | 2 | CSV and camt.053 ingestion, idempotency | Not started | |
 | 3 | Four-tier matching, corpus, deterministic replay | Not started | |

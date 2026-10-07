@@ -1,6 +1,6 @@
 # Functional Requirements Document (FRD)
 
-Status: **Draft for Phase 0 review** · Source: [BRD.md](BRD.md) · Companions: [architecture.md](architecture.md), [glossary.md](glossary.md), [synthetic-data-spec.md](synthetic-data-spec.md), [ADRs](adr/)
+Status: **Approved 2026-10-07 (Phase 0 gate)** · Source: [BRD.md](BRD.md) · Companions: [architecture.md](architecture.md), [glossary.md](glossary.md), [synthetic-data-spec.md](synthetic-data-spec.md), [ADRs](adr/)
 
 This document expands each BRD functional requirement (FR-xx) into a numbered functional requirement (FRD-xx) with Given/When/Then acceptance criteria (AC) and edge cases (EC). Every AC is written so it can become one automated test; IDs are stable so the [traceability matrix](traceability-matrix.md) can point at them.
 
@@ -15,7 +15,7 @@ This document expands each BRD functional requirement (FR-xx) into a numbered fu
 
 ## 2. Assumptions and open questions
 
-Assumptions are things this FRD takes as true. Open questions are places where the BRD is silent or ambiguous. Per the working rules, none are decided silently: each has a recommendation, and **the FRD and ADRs follow the recommendation provisionally until you approve or overrule it**.
+Assumptions are things this FRD takes as true. Open questions are places where the BRD is silent or ambiguous. Per the working rules, none are decided silently: each has a recommendation, and **all recommendations below were approved by Caesar on 2026-10-07 ("go with the recommendations")**. Changing one later requires an ADR amendment.
 
 ### 2.1 Assumptions
 

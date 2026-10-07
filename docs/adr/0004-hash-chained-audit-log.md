@@ -1,6 +1,6 @@
 # ADR-0004: Append-only, hash-chained audit log
 
-- Status: **Proposed** (Phase 0, awaiting approval)
+- Status: **Accepted** (approved by Caesar, 2026-10-07)
 - Date: 2026-10-07
 - Related: FR-09, FRD-09, NFR-06, Q-13
 
