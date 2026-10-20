@@ -7,5 +7,6 @@ public enum FileErrorCode {
     UNSUPPORTED_ENCODING,
     MALFORMED_CSV,
     INVALID_HEADER,
-    MALFORMED_XML
+    MALFORMED_XML,
+    FILE_TOO_LARGE
 }
