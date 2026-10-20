@@ -73,4 +73,12 @@ class IngestionRequestTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new RejectedLine(0, LineErrorCode.INVALID_DATE, "m", "x"));
     }
+    @Test
+    void statementLinesCannotCarryAnEntryId() {
+        AcceptedLine plain = accepted(LineSource.STATEMENT, HASH, 1);
+        AcceptedLine withId = new AcceptedLine(1, plain.line(), "L-1");
+
+        assertThrows(IllegalArgumentException.class, () -> new IngestionRequest(
+                LineSource.STATEMENT, HASH, FileFormat.CSV, 10, List.of(withId), List.of()));
+    }
 }

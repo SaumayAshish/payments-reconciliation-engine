@@ -1,5 +1,6 @@
 package com.saumay.payments.ingestion.service;
 
+import com.saumay.payments.domain.model.CanonicalLine;
 import com.saumay.payments.domain.model.ContentHash;
 import com.saumay.payments.domain.model.LineSource;
 import com.saumay.payments.ingestion.AcceptedLine;
@@ -8,6 +9,7 @@ import com.saumay.payments.ingestion.IngestionOutcome;
 import com.saumay.payments.ingestion.IngestionRequest;
 import com.saumay.payments.ingestion.IngestionStore;
 import com.saumay.payments.ingestion.RejectedLine;
+import com.saumay.payments.ingestion.normalise.LineErrorCode;
 import com.saumay.payments.ingestion.normalise.LineNormaliser;
 import com.saumay.payments.ingestion.normalise.LineValidationException;
 import com.saumay.payments.ingestion.parse.Camt053Parser;
@@ -21,6 +23,7 @@ import com.saumay.payments.ingestion.parse.ParsedRow;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Turns uploaded bytes into a stored ingestion (FRD-01 to FRD-03): size check, content hash, parse, normalise every
@@ -33,6 +36,8 @@ import java.util.Objects;
 public final class IngestionService {
 
     public static final long DEFAULT_MAX_BYTES = 10L * 1024 * 1024;
+
+    private static final Pattern ENTRY_ID = Pattern.compile("[A-Za-z0-9._:/-]{1,64}");
 
     private final IngestionStore store;
     private final long maxBytes;
@@ -90,8 +95,12 @@ public final class IngestionService {
         List<RejectedLine> rejected = new ArrayList<>(parsed.rejected());
         for (ParsedRow row : parsed.rows()) {
             try {
-                accepted.add(new AcceptedLine(row.lineNumber(),
-                        LineNormaliser.normalise(kind, hash, row.lineNumber(), row.raw())));
+                CanonicalLine line = LineNormaliser.normalise(kind, hash, row.lineNumber(), row.raw());
+                if (row.entryId() != null && !ENTRY_ID.matcher(row.entryId()).matches()) {
+                    throw new LineValidationException(LineErrorCode.INVALID_ENTRY_ID,
+                            "entry_id must be 1 to 64 characters of letters, digits, '.', '_', ':', '/' or '-'");
+                }
+                accepted.add(new AcceptedLine(row.lineNumber(), line, row.entryId()));
             } catch (LineValidationException e) {
                 rejected.add(new RejectedLine(row.lineNumber(), e.code(), e.getMessage(), row.rawText()));
             }

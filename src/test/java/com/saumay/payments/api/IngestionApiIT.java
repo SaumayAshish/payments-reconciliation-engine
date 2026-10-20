@@ -243,6 +243,73 @@ class IngestionApiIT {
         assertEquals(2, rows.size());
         assertEquals(rows.get(0), rows.get(1));
     }
+    @Test
+    void aReusedEntryIdWithDifferentContentIsRejectedAsAConflict() throws Exception {
+        post("/ledger", "text/csv", entryCsv("ACC-1,,2026-10-09,10.00,GBP,REF-1,Acme Ltd,payment,L-1"));
+
+        HttpResponse<String> second = post("/ledger", "text/csv", entryCsv(
+                "ACC-1,,2026-10-09,99.00,GBP,REF-1,Acme Ltd,payment,L-1",
+                "ACC-1,,2026-10-09,5.00,GBP,REF-2,Acme Ltd,payment,L-2"));
+
+        assertEquals(201, second.statusCode());
+        assertTrue(second.body().contains("\"acceptedCount\":1"));
+        assertTrue(second.body().contains("\"rejectedCount\":1"));
+        HttpResponse<String> detail = get(second.headers().firstValue("Location").orElseThrow());
+        assertTrue(detail.body().contains("LEDGER_ENTRY_CONFLICT"));
+        assertEquals(2, count("ledger_entry"));
+        assertEquals(1000L,
+                jdbc.queryForObject("SELECT amount_minor FROM ledger_entry WHERE entry_id = 'L-1'", Long.class));
+    }
+
+    @Test
+    void aReusedEntryIdWithIdenticalContentIsRejectedAsADuplicateEntry() throws Exception {
+        String same = "ACC-1,,2026-10-09,10.00,GBP,REF-1,Acme Ltd,payment,L-1";
+        post("/ledger", "text/csv", entryCsv(same));
+
+        HttpResponse<String> second = post("/ledger", "text/csv",
+                entryCsv(same, "ACC-1,,2026-10-09,5.00,GBP,REF-2,Acme Ltd,payment,L-2"));
+
+        HttpResponse<String> detail = get(second.headers().firstValue("Location").orElseThrow());
+        assertTrue(detail.body().contains("DUPLICATE_LEDGER_ENTRY"));
+        assertEquals(2, count("ledger_entry"));
+    }
+
+    @Test
+    void repeatedEntryIdsInsideOneFileKeepOnlyTheFirst() throws Exception {
+        HttpResponse<String> response = post("/ledger", "text/csv", entryCsv(
+                "ACC-1,,2026-10-09,10.00,GBP,REF-1,Acme Ltd,payment,L-1",
+                "ACC-1,,2026-10-09,10.00,GBP,REF-1,Acme Ltd,payment,L-1",
+                "ACC-1,,2026-10-09,99.00,GBP,REF-1,Acme Ltd,payment,L-1"));
+
+        assertTrue(response.body().contains("\"acceptedCount\":1"));
+        assertTrue(response.body().contains("\"rejectedCount\":2"));
+        HttpResponse<String> detail = get(response.headers().firstValue("Location").orElseThrow());
+        assertTrue(detail.body().contains("DUPLICATE_LEDGER_ENTRY"));
+        assertTrue(detail.body().contains("LEDGER_ENTRY_CONFLICT"));
+        assertEquals(1, count("ledger_entry"));
+    }
+
+    @Test
+    void sixDifferentFilesCarryingTheSameEntryIdStoreItExactlyOnce() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(6);
+        try {
+            List<Future<Integer>> results = new ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                final String narrative = "attempt-" + i;
+                results.add(pool.submit(() -> post("/ledger", "text/csv", entryCsv(
+                        "ACC-1,,2026-10-09,10.00,GBP,REF-1,Acme Ltd," + narrative + ",L-9")).statusCode()));
+            }
+            for (Future<Integer> result : results) {
+                assertEquals(201, result.get());
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(6, count("ingestion_file"));
+        assertEquals(1, count("ledger_entry"));
+        assertEquals(5, count("rejected_line"));
+    }
 
     // ---- helpers ----
 
@@ -261,5 +328,8 @@ class IngestionApiIT {
 
     private static int count(String table) {
         return Objects.requireNonNull(jdbc.queryForObject("SELECT count(*) FROM " + table, Integer.class));
+    }
+    private static byte[] entryCsv(String... rows) {
+        return (HEADER + ",entry_id\n" + String.join("\n", rows)).getBytes(StandardCharsets.UTF_8);
     }
 }

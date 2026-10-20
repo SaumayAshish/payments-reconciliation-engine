@@ -39,6 +39,10 @@ public record IngestionRequest(
             if (a.line().source() != kind) {
                 throw new IllegalArgumentException("Line " + a.lineNumber() + " belongs to the other side");
             }
+            if (kind == LineSource.STATEMENT && a.entryId() != null) {
+                throw new IllegalArgumentException(
+                        "Line " + a.lineNumber() + ": statement lines cannot carry an entry id");
+            }
             if (!a.line().lineKey().equals(LineKey.of(fileHash, a.lineNumber()))) {
                 throw new IllegalArgumentException("Line " + a.lineNumber() + " has a key that does not match this file");
             }

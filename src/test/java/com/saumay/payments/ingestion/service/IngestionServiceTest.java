@@ -186,6 +186,36 @@ class IngestionServiceTest {
         assertEquals(FileErrorCode.FILE_TOO_LARGE, e.code());
         assertTrue(store.requests.isEmpty());
     }
+    @Test
+    void ledgerEntryIdsFromCsvAreCarriedToTheStore() {
+        service.ingestLedgerCsv(csv(HEADER + ",entry_id", GOOD + ",L-1"));
+
+        assertEquals("L-1", store.onlyRequest().accepted().get(0).entryId());
+    }
+
+    @Test
+    void aMalformedEntryIdRejectsOnlyThatLine() {
+        service.ingestLedgerCsv(csv(HEADER + ",entry_id",
+                GOOD + ",bad id!",
+                "ACC-1,,2026-10-09,20.00,GBP,REF-2,Acme Ltd,payment,L-2"));
+
+        IngestionRequest request = store.onlyRequest();
+        assertEquals(1, request.accepted().size());
+        assertEquals(2, request.accepted().get(0).lineNumber());
+        assertEquals(1, request.rejected().size());
+        assertEquals(1, request.rejected().get(0).lineNumber());
+        assertEquals(LineErrorCode.INVALID_ENTRY_ID, request.rejected().get(0).code());
+    }
+
+    @Test
+    void ledgerJsonEntryIdsAreCarriedToTheStore() {
+        String json = "[{\"account\":\"ACC-1\",\"value_date\":\"2026-10-09\",\"amount\":\"10.00\","
+                + "\"currency\":\"GBP\",\"reference\":\"REF-1\",\"entry_id\":\"L-7\"}]";
+
+        service.ingestLedgerJson(json.getBytes(StandardCharsets.UTF_8));
+
+        assertEquals("L-7", store.onlyRequest().accepted().get(0).entryId());
+    }
 
     // ---- helpers ----
 
