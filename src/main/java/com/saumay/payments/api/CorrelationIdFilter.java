@@ -9,12 +9,15 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.MDC;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.stereotype.Component;
 
 /**
  * Gives every request a correlation id: the caller's X-Correlation-Id if it is 8 to 64 safe characters, otherwise a
  * fresh UUID. The id goes into the logging context and back to the caller in the response header. Unsafe supplied
  * values are replaced, never echoed, so a caller cannot inject text into the logs.
  */
+
+@Component
 public final class CorrelationIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Correlation-Id";

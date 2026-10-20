@@ -41,6 +41,9 @@ public final class IngestionService {
         }
         this.maxBytes = maxBytes;
     }
+    public long maxBytes() {
+        return maxBytes;
+    }
 
     /** A bank statement as CSV or camt.053. */
     public IngestionResult ingestStatement(byte[] content, FileFormat format) {

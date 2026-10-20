@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: payments-reconciliation
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payments_recon}
+    username: ${DB_USER:recon}
+    password: ${DB_PASSWORD}
+
+payments:
+  ingestion:
+    max-bytes: 10485760
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
