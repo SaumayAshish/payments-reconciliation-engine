@@ -4,10 +4,6 @@ import com.saumay.payments.domain.model.LineSource;
 import com.saumay.payments.ingestion.RejectedLine;
 import com.saumay.payments.ingestion.normalise.LineErrorCode;
 import com.saumay.payments.ingestion.normalise.RawLine;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,7 +24,6 @@ public final class CsvParser {
     private static final List<String> REQUIRED = List.of(
             "account", "booking_date", "value_date", "amount", "currency", "reference", "counterparty", "narrative");
     private static final String ENTRY_ID = "entry_id";
-    private static final char BOM = '\uFEFF';
 
     private CsvParser() {
     }
@@ -40,7 +35,7 @@ public final class CsvParser {
             throw new FileRejectedException(FileErrorCode.EMPTY_FILE, "The file is empty");
         }
 
-        List<CsvRecord> records = tokenise(decode(content));
+        List<CsvRecord> records = tokenise(Utf8.decode(content));
         if (records.isEmpty()) {
             throw new FileRejectedException(FileErrorCode.EMPTY_FILE, "The file contains no records");
         }
@@ -111,20 +106,6 @@ public final class CsvParser {
             }
         }
         return columns;
-    }
-
-    private static String decode(byte[] content) {
-        String text;
-        try {
-            text = StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(content))
-                    .toString();
-        } catch (CharacterCodingException e) {
-            throw new FileRejectedException(FileErrorCode.UNSUPPORTED_ENCODING, "The file is not valid UTF-8");
-        }
-        return !text.isEmpty() && text.charAt(0) == BOM ? text.substring(1) : text;
     }
 
     /** Splits text into records. Blank lines are skipped. Throws if a quoted field is never closed. */

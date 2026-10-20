@@ -6,5 +6,6 @@ public enum FileErrorCode {
     NO_DATA_ROWS,
     UNSUPPORTED_ENCODING,
     MALFORMED_CSV,
-    INVALID_HEADER
+    INVALID_HEADER,
+    MALFORMED_XML
 }
