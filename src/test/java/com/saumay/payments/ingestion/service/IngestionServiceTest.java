@@ -13,6 +13,7 @@ import com.saumay.payments.ingestion.IngestionStore;
 import com.saumay.payments.ingestion.normalise.LineErrorCode;
 import com.saumay.payments.ingestion.parse.FileErrorCode;
 import com.saumay.payments.ingestion.parse.FileRejectedException;
+import com.saumay.payments.ingestion.parse.LedgerJsonParser;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -138,6 +139,52 @@ class IngestionServiceTest {
         IngestionResult result = service.ingestStatement(csv(HEADER, GOOD), FileFormat.CSV);
 
         assertTrue(result.outcome().duplicate());
+    }
+    @Test
+    void ledgerJsonIsStoredAsJsonAndHashedOverItsCanonicalForm() {
+        String compact = "[{\"account\":\"ACC-1\",\"value_date\":\"2026-10-09\",\"amount\":\"10.00\","
+                + "\"currency\":\"GBP\",\"reference\":\"REF-1\"}]";
+        String spaced = "[ { \"reference\": \"REF-1\", \"currency\": \"GBP\", \"amount\": \"10.00\","
+                + " \"value_date\": \"2026-10-09\", \"account\": \"ACC-1\" } ]";
+
+        service.ingestLedgerJson(compact.getBytes(StandardCharsets.UTF_8));
+        service.ingestLedgerJson(spaced.getBytes(StandardCharsets.UTF_8));
+
+        byte[] canonical = LedgerJsonParser.parse(compact.getBytes(StandardCharsets.UTF_8)).canonicalBytes();
+        IngestionRequest first = store.requests.get(0);
+        assertEquals(LineSource.LEDGER, first.kind());
+        assertEquals(FileFormat.JSON, first.format());
+        assertEquals(ContentHash.of(canonical), first.fileHash());
+        assertEquals(canonical.length, first.byteSize());
+        assertEquals(first.fileHash(), store.requests.get(1).fileHash());
+    }
+
+    @Test
+    void ledgerJsonEntriesAreNormalisedAndInvalidOnesKeepTheirPosition() {
+        String json = "[{\"account\":\"ACC-1\",\"value_date\":\"2026-10-09\",\"amount\":\"10.00\","
+                + "\"currency\":\"GBP\",\"reference\":\"REF-1\"},"
+                + "{\"account\":\"ACC-1\",\"value_date\":\"2026-10-09\",\"amount\":\"10.00\","
+                + "\"currency\":\"XX1\",\"reference\":\"REF-2\"}]";
+
+        service.ingestLedgerJson(json.getBytes(StandardCharsets.UTF_8));
+
+        IngestionRequest request = store.onlyRequest();
+        assertEquals(1, request.accepted().size());
+        assertEquals(1, request.accepted().get(0).lineNumber());
+        assertEquals(1, request.rejected().size());
+        assertEquals(2, request.rejected().get(0).lineNumber());
+        assertEquals(LineErrorCode.INVALID_CURRENCY, request.rejected().get(0).code());
+    }
+
+    @Test
+    void anOversizedLedgerJsonBodyIsRefusedBeforeParsing() {
+        IngestionService small = new IngestionService(store, 10);
+
+        FileRejectedException e = assertThrows(FileRejectedException.class,
+                () -> small.ingestLedgerJson("[{\"account\":\"ACC-1\"}]".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(FileErrorCode.FILE_TOO_LARGE, e.code());
+        assertTrue(store.requests.isEmpty());
     }
 
     // ---- helpers ----

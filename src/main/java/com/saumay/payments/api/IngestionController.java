@@ -45,13 +45,15 @@ public class IngestionController {
         return respond(() -> service.ingestStatement(body, format));
     }
 
-    @PostMapping("/ledger")
+        @PostMapping("/ledger")
     public ResponseEntity<IngestionDtos.Created> uploadLedger(HttpServletRequest request) throws IOException {
-        if (!isType(request.getContentType(), CSV)) {
+        String contentType = request.getContentType();
+        boolean json = isType(contentType, MediaType.APPLICATION_JSON);
+        if (!json && !isType(contentType, CSV)) {
             throw unsupportedMediaType();
         }
         byte[] body = readBounded(request);
-        return respond(() -> service.ingestLedgerCsv(body));
+        return respond(() -> json ? service.ingestLedgerJson(body) : service.ingestLedgerCsv(body));
     }
 
     @GetMapping("/{id}")
@@ -105,8 +107,9 @@ public class IngestionController {
         }
     }
 
-    private static ApiException unsupportedMediaType() {
+        private static ApiException unsupportedMediaType() {
         return new ApiException(HttpStatus.valueOf(415), "INGESTION_UNSUPPORTED_MEDIA_TYPE",
-                "Content-Type must be text/csv, or application/xml for camt.053 statements");
+                "Unsupported Content-Type: use text/csv, application/xml (statements only) "
+                        + "or application/json (ledger only)");
     }
 }

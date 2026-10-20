@@ -197,6 +197,52 @@ class IngestionApiIT {
         assertEquals(404, response.statusCode());
         assertTrue(response.body().contains("INGESTION_NOT_FOUND"));
     }
+    @Test
+    void ledgerJsonIsAcceptedAndItsCanonicalFormDecidesDuplicates() throws Exception {
+        String compact = "[{\"account\":\"ACC-1\",\"value_date\":\"2026-10-09\",\"amount\":\"10.00\","
+                + "\"currency\":\"GBP\",\"reference\":\"REF-1\",\"counterparty\":\"Acme Ltd\","
+                + "\"narrative\":\"payment\"}]";
+        String reordered = "[ {\n \"narrative\": \"payment\", \"counterparty\": \"Acme Ltd\","
+                + " \"reference\": \"REF-1\",\n \"currency\": \"GBP\", \"amount\": \"10.00\","
+                + " \"booking_date\": null,\n \"value_date\": \"2026-10-09\", \"account\": \"ACC-1\" } ]";
+
+        HttpResponse<String> first = post("/ledger", "application/json", compact.getBytes(StandardCharsets.UTF_8));
+        HttpResponse<String> second = post("/ledger", "application/json", reordered.getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(201, first.statusCode());
+        assertEquals(200, second.statusCode());
+        assertTrue(second.body().contains("\"duplicate\":true"));
+        assertEquals(1, count("ingestion_file"));
+        assertEquals(1, count("ledger_entry"));
+    }
+
+    @Test
+    void aNumericAmountInLedgerJsonIsRefusedAndNothingIsStored() throws Exception {
+        String json = "[{\"account\":\"ACC-1\",\"amount\":10.00}]";
+
+        HttpResponse<String> response = post("/ledger", "application/json", json.getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(422, response.statusCode());
+        assertTrue(response.body().contains("INGESTION_MALFORMED_JSON"));
+        assertEquals(0, count("ingestion_file"));
+    }
+
+    @Test
+    void theSameEntryAsCsvAndAsJsonProducesIdenticalCanonicalRows() throws Exception {
+        String csv = String.join("\n", HEADER, "ACC-1,,2026-10-09,10.00,GBP,REF-1,Acme Ltd,payment");
+        String json = "[{\"account\":\"ACC-1\",\"value_date\":\"2026-10-09\",\"amount\":\"10.00\","
+                + "\"currency\":\"GBP\",\"reference\":\"REF-1\",\"counterparty\":\"Acme Ltd\","
+                + "\"narrative\":\"payment\"}]";
+
+        assertEquals(201, post("/ledger", "text/csv", csv.getBytes(StandardCharsets.UTF_8)).statusCode());
+        assertEquals(201, post("/ledger", "application/json", json.getBytes(StandardCharsets.UTF_8)).statusCode());
+
+        List<java.util.Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT account, amount_minor, currency, value_date, booking_date, reference, reference_norm,"
+                        + " counterparty, counterparty_norm, narrative FROM ledger_entry ORDER BY seq");
+        assertEquals(2, rows.size());
+        assertEquals(rows.get(0), rows.get(1));
+    }
 
     // ---- helpers ----
 

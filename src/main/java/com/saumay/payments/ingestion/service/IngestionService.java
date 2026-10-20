@@ -14,6 +14,8 @@ import com.saumay.payments.ingestion.parse.Camt053Parser;
 import com.saumay.payments.ingestion.parse.CsvParser;
 import com.saumay.payments.ingestion.parse.FileErrorCode;
 import com.saumay.payments.ingestion.parse.FileRejectedException;
+import com.saumay.payments.ingestion.parse.LedgerJsonDocument;
+import com.saumay.payments.ingestion.parse.LedgerJsonParser;
 import com.saumay.payments.ingestion.parse.ParsedFile;
 import com.saumay.payments.ingestion.parse.ParsedRow;
 import java.util.ArrayList;
@@ -25,7 +27,8 @@ import java.util.Objects;
  * row, then one atomic idempotent store. Invalid rows are kept as rejected lines, never dropped. A file the parser
  * refuses as a whole never reaches the store, so it leaves no ingestion row (EC-01.5).
  *
- * <p>Plain Java: the same bytes always produce the same {@link IngestionRequest}.
+ * <p>Plain Java: the same bytes always produce the same {@link IngestionRequest}. For ledger JSON the identity is the
+ * canonical form of the entries, not the raw body (AC-03.2).
  */
 public final class IngestionService {
 
@@ -41,6 +44,7 @@ public final class IngestionService {
         }
         this.maxBytes = maxBytes;
     }
+
     public long maxBytes() {
         return maxBytes;
     }
@@ -51,24 +55,36 @@ public final class IngestionService {
         if (format == FileFormat.JSON) {
             throw new IllegalArgumentException("JSON is not a statement format");
         }
-        return ingest(LineSource.STATEMENT, format, content);
+        requireWithinLimit(content);
+        ParsedFile parsed = format == FileFormat.CAMT053
+                ? Camt053Parser.parse(content)
+                : CsvParser.parse(content, LineSource.STATEMENT);
+        return process(LineSource.STATEMENT, format, content, parsed);
     }
 
     /** Ledger entries as CSV. */
     public IngestionResult ingestLedgerCsv(byte[] content) {
-        return ingest(LineSource.LEDGER, FileFormat.CSV, content);
+        requireWithinLimit(content);
+        return process(LineSource.LEDGER, FileFormat.CSV, content, CsvParser.parse(content, LineSource.LEDGER));
     }
 
-    private IngestionResult ingest(LineSource kind, FileFormat format, byte[] content) {
+    /** Ledger entries as a JSON array. The file identity is the canonical form of the entries. */
+    public IngestionResult ingestLedgerJson(byte[] content) {
+        requireWithinLimit(content);
+        LedgerJsonDocument document = LedgerJsonParser.parse(content);
+        return process(LineSource.LEDGER, FileFormat.JSON, document.canonicalBytes(), document.parsed());
+    }
+
+    private void requireWithinLimit(byte[] content) {
         Objects.requireNonNull(content, "content");
         if (content.length > maxBytes) {
             throw new FileRejectedException(FileErrorCode.FILE_TOO_LARGE,
                     "The file exceeds the maximum size of " + maxBytes + " bytes");
         }
-        ParsedFile parsed = format == FileFormat.CAMT053
-                ? Camt053Parser.parse(content)
-                : CsvParser.parse(content, kind);
-        ContentHash hash = ContentHash.of(content);
+    }
+
+    private IngestionResult process(LineSource kind, FileFormat format, byte[] identityBytes, ParsedFile parsed) {
+        ContentHash hash = ContentHash.of(identityBytes);
 
         List<AcceptedLine> accepted = new ArrayList<>();
         List<RejectedLine> rejected = new ArrayList<>(parsed.rejected());
@@ -81,8 +97,8 @@ public final class IngestionService {
             }
         }
 
-        IngestionOutcome outcome =
-                store.store(new IngestionRequest(kind, hash, format, content.length, accepted, rejected));
+        IngestionOutcome outcome = store.store(
+                new IngestionRequest(kind, hash, format, identityBytes.length, accepted, rejected));
         return new IngestionResult(outcome, parsed.ignoredElements());
     }
 }

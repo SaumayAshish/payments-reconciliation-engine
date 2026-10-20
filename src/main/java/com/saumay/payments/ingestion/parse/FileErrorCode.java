@@ -8,5 +8,6 @@ public enum FileErrorCode {
     MALFORMED_CSV,
     INVALID_HEADER,
     MALFORMED_XML,
-    FILE_TOO_LARGE
+    FILE_TOO_LARGE,
+    MALFORMED_JSON
 }
