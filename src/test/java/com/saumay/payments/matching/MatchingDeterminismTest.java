@@ -4,18 +4,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.saumay.payments.domain.model.LineSource;
+
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SplittableRandom;
+
 import org.junit.jupiter.api.Test;
 
-/** NFR-04 at tier level: the outcome must not depend on the order the inputs arrive in. */
+/**
+ * NFR-04 at tier level: the outcome must not depend on the order the inputs arrive in.
+ */
 class MatchingDeterminismTest {
 
     private static final MatchingConfig CONFIG = MatchingConfig.defaults();
     private static final String[] REFERENCES = {"R1", "R2", "R3", "R4"};
-    private static final long[] AMOUNTS = {10000, 20000};
+    private static final long[] AMOUNTS = {3000, 4000, 6000, 7000, 10000};
     private static final int[] DAY_OFFSETS = {0, 1, 2, 3, 4, 7};
     private static final String[] COUNTERPARTIES = {"ACME TRADING", "ACME TRADERS", "BETA CORP"};
     private static final String[] NARRATIVES = {"INVOICE PAYMENT", "INVOICE PAYMNT", "SALARY"};
@@ -23,8 +27,8 @@ class MatchingDeterminismTest {
     @Test
     void shuffledInputsGiveIdenticalOutcomesAndTheTrialsAreNotTrivial() {
         SplittableRandom random = new SplittableRandom(20261021L);
-        int[] matches = new int[3];
-        int[] ambiguous = new int[3];
+        int[] matches = new int[4];
+        int[] ambiguous = new int[4];
         for (int trial = 0; trial < 300; trial++) {
             List<MatchableLine> statements = world(random, true);
             List<MatchableLine> ledger = world(random, false);
@@ -53,7 +57,8 @@ class MatchingDeterminismTest {
         TierOutcome fuzzy = PairResolver.resolve(tolerance.remainingStatements(), tolerance.remainingLedger(),
                 FuzzyTier.candidates(tolerance.remainingStatements(), tolerance.remainingLedger(), CONFIG),
                 CONFIG);
-        return List.of(exact, tolerance, fuzzy);
+        TierOutcome oneToMany = OneToManyTier.run(fuzzy.remainingStatements(), fuzzy.remainingLedger(), CONFIG);
+        return List.of(exact, tolerance, fuzzy, oneToMany);
     }
 
     private static List<MatchableLine> world(SplittableRandom random, boolean statementSide) {

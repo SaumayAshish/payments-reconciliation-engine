@@ -23,10 +23,6 @@ public final class PairResolver {
     private PairResolver() {
     }
 
-    /** A line on one specific side, so a statement line and a ledger entry can never be confused. */
-    private record Node(boolean statementSide, LineKey key) {
-    }
-
     public static TierOutcome resolve(List<MatchableLine> statements, List<MatchableLine> ledger,
                                       List<ScoredPair> pairs, MatchingConfig config) {
         requireSingleTier(pairs);
@@ -49,7 +45,7 @@ public final class PairResolver {
             start = end;
         }
         return new TierOutcome(matches, ambiguous, remaining(statements, takenStatements),
-                remaining(ledger, takenLedger));
+                remaining(ledger, takenLedger), List.of());
     }
 
     private static void requireSingleTier(List<ScoredPair> pairs) {
@@ -94,13 +90,13 @@ public final class PairResolver {
 
     /** Groups contested pairs into connected clusters of lines, in the order the clusters first appear. */
     private static List<AmbiguousGroup> components(List<ScoredPair> contested) {
-        Map<Node, Node> parent = new HashMap<>();
+        LineClusters clusters = new LineClusters();
         for (ScoredPair pair : contested) {
-            union(parent, new Node(true, pair.statement().key()), new Node(false, pair.ledger().key()));
+            clusters.union(LineClusters.Node.statement(pair.statement()), LineClusters.Node.ledger(pair.ledger()));
         }
-        Map<Node, List<ScoredPair>> byRoot = new LinkedHashMap<>();
+        Map<LineClusters.Node, List<ScoredPair>> byRoot = new LinkedHashMap<>();
         for (ScoredPair pair : contested) {
-            Node root = find(parent, new Node(true, pair.statement().key()));
+            LineClusters.Node root = clusters.find(LineClusters.Node.statement(pair.statement()));
             byRoot.computeIfAbsent(root, r -> new ArrayList<>()).add(pair);
         }
         List<AmbiguousGroup> groups = new ArrayList<>();
@@ -121,25 +117,7 @@ public final class PairResolver {
         return groups;
     }
 
-    private static void union(Map<Node, Node> parent, Node a, Node b) {
-        parent.putIfAbsent(a, a);
-        parent.putIfAbsent(b, b);
-        Node rootA = find(parent, a);
-        Node rootB = find(parent, b);
-        if (!rootA.equals(rootB)) {
-            parent.put(rootB, rootA);
-        }
-    }
-
-    private static Node find(Map<Node, Node> parent, Node node) {
-        Node root = node;
-        while (!parent.get(root).equals(root)) {
-            root = parent.get(root);
-        }
-        return root;
-    }
-
-    private static List<MatchableLine> remaining(List<MatchableLine> lines, Set<LineKey> taken) {
+    static List<MatchableLine> remaining(List<MatchableLine> lines, Set<LineKey> taken) {
         List<MatchableLine> result = new ArrayList<>();
         for (MatchableLine line : lines) {
             if (!taken.contains(line.key())) {
