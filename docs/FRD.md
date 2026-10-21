@@ -204,7 +204,7 @@ A line leaves the pipeline at the first tier that confirms it. Every match store
 | 3 Fuzzy | same account, amount, currency; value date within `W`; similarity `sim >= 0.60` | `0.70 + (sim - 0.60) / 0.40 * 0.249`, so 0.70 to 0.949 (Q-03, Q-04) |
 | 4 One-to-many | subset of up to 8 candidate entries sums exactly to the other side's amount; same account, currency and sign; value dates within `W` | `0.80 + 0.07*batchRef + 0.03*sameDate`, capped at `0.949` |
 
-`sim = 0.6 * tokenSetSimilarity(counterpartyNorm) + 0.4 * (1 - normalisedLevenshtein(narrative_a, narrative_b))`, where `tokenSetSimilarity` is Jaccard over normalised tokens. Weights and the `0.60` floor are configuration. The formulas above are **proposed and will be tuned against the corpus in Phase 2**; any change is recorded as an ADR amendment before the gate.
+`sim = 0.6 * tokenSetSimilarity(counterpartyNorm) + 0.4 * (1 - normalisedLevenshtein(narrative_a, narrative_b))`, where `tokenSetSimilarity` is Jaccard over normalised tokens. Weights and the `0.60` floor are configuration.  Similarity is computed in integer thousandths. Narratives are compared after upper-casing and reducing punctuation and runs of spaces. A side with no counterparty tokens, or two empty narratives, contributes 0 because there is no evidence. Dates may be equal or up to `W` business days apart. The formulas above are **proposed and will be tuned against the corpus in Phase 2**; any change is recorded as an ADR amendment before the gate.
 
 | AC | Given / When / Then |
 | --- | --- |
