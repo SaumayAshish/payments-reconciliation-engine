@@ -70,7 +70,7 @@ Look-alike pairs generated on purpose. Each is labelled `MUST_NOT_MATCH`; the as
 | `SAME_REF_DIFFERENT_CURRENCY` | Same reference and amount, different currency | No match; `CURRENCY_MISMATCH` |
 | `OUT_OF_WINDOW` | Same reference, amount, currency; value date 4+ business days apart | Not matched in Tier 2 |
 | `REVERSAL_PAIR` | `+X` and `-X` with the same reference | Never matched to each other |
-| `DUPLICATE_REFERENCE` | Same reference appears twice on one side, once on the other | One claimed, other flagged `DUPLICATE_SUSPECT`; never both claimed to one candidate |
+| `DUPLICATE_REFERENCE` | Same reference appears twice on one side, once on the other | No pairing is confirmed; all lines involved form one AMBIGUOUS_TIE review group (AC-05.6).|
 | `IDENTICAL_TWINS` | Two identical statement lines and two identical ledger entries | `AMBIGUOUS_TIE` review, never auto-confirmed |
 | `FUZZY_NEAR_MISS` | Similar counterparty and amount but a different customer (for example `Northwind Trading` vs `Northwind Traders`) with a different true counterpart elsewhere | Not auto-confirmed |
 | `SUBSET_AMBIGUITY` | Two different subsets of ledger entries sum to the statement amount | Review with both subsets, never auto-confirmed |

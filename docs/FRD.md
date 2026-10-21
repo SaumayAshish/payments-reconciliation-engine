@@ -200,7 +200,7 @@ A line leaves the pipeline at the first tier that confirms it. Every match store
 | Tier | Eligibility (all must hold) | Score |
 | --- | --- | --- |
 | 1 Exact | same account, `referenceNorm`, `amountMinor`, currency, `valueDate` | `1.00` |
-| 2 Tolerance | same account, amount, currency, `referenceNorm`; business-day distance `d` between value dates with `1 <= d <= W` (default `W = 3`) | `0.99 - 0.09 * d / W` (so `W=3`: 0.96, 0.93, 0.90) |
+| 2 Tolerance | same account, amount, currency, `referenceNorm`; value dates differ and business-day distance `d` satisfies `0 <= d <= W` (default `W = 3`; `d = 0` when the dates differ only by a weekend, EC-04.6) | `0.99 - 0.09 * d / W`, integer arithmetic rounded half up (so `W=3`: 0.99, 0.96, 0.93, 0.90) |
 | 3 Fuzzy | same account, amount, currency; value date within `W`; similarity `sim >= 0.60` | `0.70 + (sim - 0.60) / 0.40 * 0.249`, so 0.70 to 0.949 (Q-03, Q-04) |
 | 4 One-to-many | subset of up to 8 candidate entries sums exactly to the other side's amount; same account, currency and sign; value dates within `W` | `0.80 + 0.07*batchRef + 0.03*sameDate`, capped at `0.949` |
 
@@ -221,7 +221,7 @@ Edge cases:
 - **EC-04.1 Same-amount collisions**: two statement lines and two ledger entries of equal amount, different references: Tier 1 or 2 resolves them by reference; if references also tie, FRD-05 tie rule applies.
 - **EC-04.2 Currency mismatch**: same reference and amount, different currency: never a match; produces a `CURRENCY_MISMATCH` exception with the candidate attached.
 - **EC-04.3 Amount mismatch**: same reference and date, different amount: never a match; `AMOUNT_MISMATCH` exception with the delta in minor units.
-- **EC-04.4 Reversal pairs**: `+100.00` and `-100.00` with the same reference are **not** matched to each other; each looks for its own counterpart.
+- **EC-04.5 Duplicate references**: a reference appearing twice on one side and once on the other: the pairings tie, so nothing is auto-confirmed (AC-05.6, ADR-0003). All lines in the tie go to review as `AMBIGUOUS_TIE`.
 - **EC-04.5 Duplicate references**: a reference appearing twice on one side and once on the other: one candidate pairing is claimed per FRD-05, the other line becomes `DUPLICATE_SUSPECT`.
 - **EC-04.6 Weekend dates**: rolled to Monday before distance is computed.
 - **EC-04.7 Zero candidates**: skipped to exception creation, never an error.

@@ -59,3 +59,11 @@ Tier 4 considers at most 8 candidate entries (default, configurable), chosen by 
 ## Interview explanation
 
 "Reconciliation has to be reproducible, so the engine is a pure function of explicit inputs and configuration. I rank candidates by a total order, resolve claims globally rather than row by row, and never auto-confirm a tie, because an unlucky tiebreak is a false match in a bank."
+
+## Amendment 2026-10-21: tie resolution inside a tier, review claims, weekend gap
+
+1. Within a tier, pairs are processed in groups of equal score, best first. In a group a pair is accepted only if neither line appears in another live pair of that group. Otherwise the whole connected cluster of lines is held back as `AMBIGUOUS_TIE` and takes no part in lower-scored groups or lower tiers. The outcome depends only on sets of lines, never on arrival order; a shuffle test enforces it.
+2. A review-band proposal (for example Tier 2 at 0.93) claims both lines as a tentative match, so it keeps the "at most one active match" rule.
+3. Tier 2 admits business-day distance 0 when the value dates differ (a weekend date rolls to Monday), closing a gap in FRD-04, which required distance of at least 1.
+
+Rejected: greedy "take the first by total order" (silently picks a winner among equals, contradicting AC-05.6), and holding back only the contested pair while the lines fall through to worse candidates (a reviewer may rightly want the better one). Consequence: genuinely identical duplicate payments go to review.
