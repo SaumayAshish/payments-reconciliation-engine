@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: Payments Reconciliation and Exceptions Platform API
+  version: 0.2.0
+  description: >
+    Ingestion endpoints (Phase 2). Authentication and role enforcement arrive in Phase 8; until then the roles
+    shown in x-required-roles are documented intent, not enforced. All data is synthetic.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/ingestions/statements:
+    post:
+      summary: Upload a bank statement
+      description: >
+        The request body is the raw file. Identity is the SHA-256 of the exact bytes, so retries are safe: a file
+        already ingested returns 200 with duplicate true and changes nothing.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+            example: |
+              account,booking_date,value_date,amount,currency,reference,counterparty,narrative
+              ACC-1,,2026-10-09,1250.50,GBP,INV-2026-0042,Acme Trading Ltd,invoice payment
+          application/xml:
+            schema: { type: string, description: Simplified camt.053 }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '200': { $ref: '#/components/responses/Duplicate' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/ingestions/ledger:
+    post:
+      summary: Submit ledger entries
+      description: >
+        CSV (same columns plus optional entry_id) or a JSON array of flat objects whose values are strings or null.
+        For JSON the file identity is the canonical form (fixed field order, compact, null and missing equal), so
+        the same entries with different key order or whitespace are a duplicate. An entry_id already stored is
+        rejected per line as DUPLICATE_LEDGER_ENTRY (identical content) or LEDGER_ENTRY_CONFLICT (different content).
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/LedgerEntry' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '200': { $ref: '#/components/responses/Duplicate' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/ingestions/{id}:
+    get:
+      summary: Read back an ingestion
+      description: Counts are exact. rejectedLines lists at most the first 1000 rejected lines, in line order.
+      x-required-roles: [ADMIN, ANALYST, AUDITOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: The ingestion
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestionDetail' }
+        '404': { $ref: '#/components/responses/Error' }
+components:
+  responses:
+    Created:
+      description: New ingestion stored
+      headers:
+        Location: { schema: { type: string }, description: /api/v1/ingestions/{id} }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/IngestionResult' }
+          example: { ingestionId: 1, acceptedCount: 1000, rejectedCount: 0, duplicate: false, ignoredElements: 0 }
+    Duplicate:
+      description: Same bytes already ingested; the original ingestion is returned, nothing is written
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/IngestionResult' }
+          example: { ingestionId: 1, acceptedCount: 1000, rejectedCount: 0, duplicate: true, ignoredElements: 0 }
+    Error:
+      description: >
+        Error. Codes: INGESTION_EMPTY_FILE, INGESTION_NO_DATA_ROWS, INGESTION_UNSUPPORTED_ENCODING,
+        INGESTION_MALFORMED_CSV, INGESTION_INVALID_HEADER, INGESTION_MALFORMED_XML, INGESTION_MALFORMED_JSON (422);
+        INGESTION_FILE_TOO_LARGE (413); INGESTION_UNSUPPORTED_MEDIA_TYPE (415); INGESTION_NOT_FOUND (404).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            code: INGESTION_NO_DATA_ROWS
+            message: The file has a header but no data rows
+            correlationId: 6f1c2d9e-3b7a-4c1e-9d55-0a1b2c3d4e5f
+            timestamp: '2026-10-20T16:30:00.123456Z'
+            details: []
+  schemas:
+    IngestionResult:
+      type: object
+      required: [ingestionId, acceptedCount, rejectedCount, duplicate, ignoredElements]
+      properties:
+        ingestionId: { type: integer, format: int64 }
+        acceptedCount: { type: integer }
+        rejectedCount: { type: integer }
+        duplicate: { type: boolean }
+        ignoredElements: { type: integer, description: Unsupported camt.053 elements skipped; not stored }
+    IngestionDetail:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [STATEMENT, LEDGER] }
+        format: { type: string, enum: [CSV, CAMT053, JSON] }
+        fileHash: { type: string, description: SHA-256 hex of the file identity }
+        byteSize: { type: integer, format: int64 }
+        acceptedCount: { type: integer }
+        rejectedCount: { type: integer }
+        ingestedAt: { type: string, format: date-time }
+        rejectedLines:
+          type: array
+          items: { $ref: '#/components/schemas/RejectedLine' }
+    RejectedLine:
+      type: object
+      properties:
+        lineNumber: { type: integer, minimum: 1 }
+        code: { type: string, description: See FRD section 4.6 }
+        message: { type: string }
+        rawExcerpt: { type: string, maxLength: 200 }
+    LedgerEntry:
+      type: object
+      additionalProperties: false
+      properties:
+        account: { type: [string, 'null'] }
+        booking_date: { type: [string, 'null'] }
+        value_date: { type: [string, 'null'] }
+        amount: { type: [string, 'null'], description: Plain decimal text such as -1250.50; a JSON number is refused }
+        currency: { type: [string, 'null'] }
+        reference: { type: [string, 'null'] }
+        counterparty: { type: [string, 'null'] }
+        narrative: { type: [string, 'null'] }
+        entry_id: { type: [string, 'null'], description: 1 to 64 characters of letters, digits and . _ ':' / - }
+    ApiError:
+      type: object
+      required: [code, message, correlationId, timestamp, details]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        correlationId: { type: string }
+        timestamp: { type: string, format: date-time }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              issue: { type: string }

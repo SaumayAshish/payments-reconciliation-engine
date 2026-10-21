@@ -107,6 +107,40 @@ Parsed with a hardened StAX reader (no DTDs, no external entities). Supported: `
 
 `ingestion_id, line_number, error_code, error_message, raw_excerpt`. Rejected lines are persisted and queryable, never dropped.
 
+### 4.6 Ingestion error codes
+
+**File-level** (the whole file is refused, no ingestion row is created). API code is `INGESTION_<CODE>`.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `EMPTY_FILE` | 422 | Zero bytes, or no records |
+| `NO_DATA_ROWS` | 422 | Header or wrapper present but no entries |
+| `UNSUPPORTED_ENCODING` | 422 | Not valid UTF-8 (A-04) |
+| `MALFORMED_CSV` | 422 | A quoted field is never closed |
+| `INVALID_HEADER` | 422 | Missing, duplicate or unsupported column |
+| `MALFORMED_XML` | 422 | Not well-formed XML, or contains a DTD or entity declaration |
+| `MALFORMED_JSON` | 422 | Not a JSON array of flat objects with string or null values |
+| `FILE_TOO_LARGE` | 413 | Over the configured limit (default 10 MB) |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | Content-Type not accepted by that endpoint |
+
+**Line-level** (the line is stored as a rejected line; the rest of the file is ingested).
+
+| Code | Meaning |
+| --- | --- |
+| `INVALID_ACCOUNT`, `INVALID_CURRENCY`, `INVALID_DATE` | Field fails its format rule |
+| `INVALID_AMOUNT`, `AMOUNT_PRECISION`, `AMOUNT_RANGE`, `AMOUNT_ZERO` | Amount not a plain decimal, too many decimals for the currency, outside `long`, or zero |
+| `MISSING_REFERENCE`, `NARRATIVE_TOO_LONG` | Reference empty after normalisation, narrative over 280 characters |
+| `MALFORMED_ROW` | CSV row with the wrong column count or invalid quoting |
+| `INVALID_ENTRY_ID` | Ledger `entry_id` not 1 to 64 characters of letters, digits and `. _ : / -` |
+| `DUPLICATE_LEDGER_ENTRY` | `entry_id` already stored with identical content |
+| `LEDGER_ENTRY_CONFLICT` | `entry_id` already stored with different content (AC-03.4) |
+
+**Phase 2 design decisions (for confirmation).**
+- D-01 Files are uploaded as the raw request body with `Content-Type` selecting the format, not as multipart, so the hash covers exactly the bytes sent and oversized bodies are never buffered.
+- D-02 AC-03.4 is extended: an `entry_id` reused with identical content is also rejected (`DUPLICATE_LEDGER_ENTRY`), so a corrected re-upload cannot create a second copy of an entry. Within one file the first occurrence wins.
+- D-03 Ledger JSON accepts only string or null values; a JSON number for `amount` is refused (ADR-0001: money enters as text).
+- D-04 The camt.053 end-to-end id `NOTPROVIDED` is treated as a missing reference.
+
 ## 5. Functional requirements
 
 ### FRD-01 Idempotent statement ingestion (FR-01, Must)

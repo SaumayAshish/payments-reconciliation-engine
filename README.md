@@ -14,7 +14,7 @@ Banks lose analyst hours every day matching statement lines to ledger entries, c
 | --- | --- | --- | --- |
 | 0 | BRD, FRD, ADRs, architecture, glossary, data spec, runbook, RCA template, repo skeleton | **Complete, approved 2026-10-07** | This repository |
 | 1 | Domain model, `Money`, Flyway schema | Not started | |
-| 2 | CSV and camt.053 ingestion, idempotency | Not started | |
+| 2 | CSV and camt.053 ingestion, idempotency | Complete, gate report pending approval, and add 184 automated tests (152 unit, 32 integration) passing| |
 | 3 | Four-tier matching, corpus, deterministic replay | Not started | |
 | 4 | Exceptions, manual match, split, unmatch | Not started | |
 | 5 | Audit chain, maker-checker | Not started | |

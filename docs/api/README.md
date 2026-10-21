@@ -22,9 +22,9 @@ Status: **Endpoint catalogue (Phase 0).** The authoritative contract will be an 
 | Method and path | Purpose | Roles | Idempotency | FRD | Phase |
 | --- | --- | --- | --- | --- | --- |
 | `POST /ingestions/statements` | Upload statement (CSV or camt.053) | `ADMIN` | By content hash; duplicate returns `200` with `duplicate: true` | 01, 02 | 1 |
-| `POST /ingestions/ledger` | Submit ledger entries (JSON) or CSV | `ADMIN` | By content hash of canonical form | 03 | 1 |
+| `POST /ingestions/ledger` | Submit ledger entries (CSV or JSON)| `ADMIN` | By content hash of canonical form | 03 | 1 |
 | `GET /ingestions/{id}` | Counts, rejected lines summary | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 01 | 1 |
-| `GET /ingestions/{id}/rejected-lines` | Paged rejected lines with error codes | `ADMIN`, `ANALYST` | Safe | 02 | 1 |
+| `GET /ingestions/{id}/rejected-lines` | Paged rejected lines with error codes | `ADMIN`, `ANALYST` | Safe | 02 | later (the first 1000 rejected lines are already in GET /ingestions/{id}) |
 | `POST /reconciliations/runs` | Start a run for a business date | `ADMIN` | Same `(date, config, cutoff, batches)` returns the existing run | 04, 10 | 3 |
 | `GET /reconciliations/runs/{id}` | Run status, counts, output hash | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 10 | 3 |
 | `GET /reconciliations/runs/{id}/results` | Paged matches and exceptions | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 04, 05 | 3 |
@@ -53,5 +53,5 @@ Status: **Endpoint catalogue (Phase 0).** The authoritative contract will be an 
 ## Notes
 
 - The exception endpoint names follow the master prompt. `start` and `comments` are added because the state machine and timeline need them.
-- `POST /ingestions/*` returns `200` for duplicates, not `409` (Q-11). Provide your decision before the OpenAPI file is written.
+- `POST /ingestions/*` returns `201` for a new ingestion and `200` with `duplicate: true` for repeated bytes (Q-11, decided). The body is the raw file; see [openapi.yaml](openapi.yaml) for content types, error codes and examples.
 - A CLI command (`audit verify`) is provided alongside the endpoint so verification does not depend on the HTTP layer.

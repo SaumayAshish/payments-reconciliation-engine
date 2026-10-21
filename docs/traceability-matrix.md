@@ -4,15 +4,15 @@ Maps each BRD requirement to its FRD requirement, planned implementation, planne
 
 Status values: `planned` (designed, no code), `in progress`, `done` (test green in CI, evidence linked). Class and test names are proposals and may change during implementation; the matrix is updated in the same commit.
 
-Phase 0 status: **all rows `planned`.** No production code exists yet.
+Phase 0 status: **Phase 2 status: FR-01 to FR-03 done; NFR-03 done; NFR-05 and NFR-08 in progress; all others planned.** No production code exists yet.
 
 ## Functional requirements
 
 | BRD | FRD | Priority | Implementation (planned) | Tests (planned) | Evidence (planned) | Phase | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| FR-01 | FRD-01 | Must | `StatementIngestionService`, `IngestionRepository`, V1 migration unique constraint | `DuplicateStatementIngestionIT`, `ConcurrentIngestionIT`, `KillMidIngestRecoveryIT` | CI, README failure story | 1 | planned |
-| FR-02 | FRD-02 | Must | `LineNormaliser`, `Money`, `ReferenceNormaliser`, `CounterpartyNormaliser` | `MoneyPropertyTest`, `NormaliserTest`, `AmountPrecisionTest` | CI, ArchUnit report | 1 | planned |
-| FR-03 | FRD-03 | Must | `LedgerIngestionService`, `LedgerCsvParser`, `LedgerController` | `LedgerIngestionIT`, `LedgerRestVsCsvEquivalenceTest` | CI | 1 | planned |
+| FR-01 | FRD-01 | Must | `IngestionService`, `IngestionStore` and `JdbcIngestionStore`, `IngestionController`, `CsvParser`, `Camt053Parser`, V1 unique constraint | `IngestionApiIT` (ten uploads, eight concurrent, statement vs ledger kinds, refused files store nothing), `ProcessKillRecoveryIT` (AC-01.5), `JdbcIngestionStoreIT`, `SchemaMigrationIT`, `IngestionServiceTest`, `CsvParserTest`, `Camt053ParserTest` | CI (GitHub Actions) | 2 | done |
+| FR-02 | FRD-02 | Must | `LineNormaliser`, `AmountParser`, `ReferenceNormaliser`, `CounterpartyNormaliser`, `Money` | `MoneyTest`, `MoneyPropertyTest`, `AmountParserTest`, `NormaliserTest`, `LineNormaliserTest`, `IngestionServiceTest` | CI | 1 to 2 | done |
+| FR-03 | FRD-03 | Must | `IngestionService` (CSV and JSON ledger), `LedgerJsonParser`, `LedgerEntryIdResolver`, V2 unique `entry_id` index | `LedgerJsonParserTest`, `LedgerEntryIdResolverTest`, `IngestionApiIT` (canonical JSON identity, CSV vs JSON equivalence, entry id duplicate, conflict, same-file and concurrent reuse) | CI | 2 | done |
 | FR-04 | FRD-04 | Must | `ExactMatcher`, `ToleranceMatcher`, `FuzzyMatcher`, `OneToManyMatcher`, `TierPipeline` | `Tier1ExactTest` to `Tier4OneToManyTest`, `HardNegativeCorpusTest` | CI, match-rate-by-tier table in README | 3 (master) | planned |
 | FR-05 | FRD-05 | Must | `ConfidenceBands`, `ClaimResolver`, `MatchingConfig` | `ConfidenceBandBoundaryTest`, `TieNeverAutoConfirmsTest`, `NoLiteralThresholdsArchTest` | CI | 3 | planned |
 | FR-06 | FRD-06 | Must | `ExceptionFactory`, `RoutingRules`, `SlaPolicy` | `ExceptionCreationIT`, `RoutingRulesTest`, `RerunNoDuplicateExceptionsIT` | CI | 3 to 4 | planned |
@@ -31,12 +31,12 @@ Phase 0 status: **all rows `planned`.** No production code exists yet.
 | --- | --- | --- | --- | --- | --- |
 | NFR-01 | 1M lines matched in under 5 minutes, laptop-class | JMH benchmark plus end-to-end timed run on the 1M corpus | `docs/benchmarks.md` (hardware, JDK, command, runtime) | 10 | planned |
 | NFR-02 | Zero false auto-matches on labelled corpus | `CorpusGroundTruthTest` compares every confirmed pair to ground truth | CI, README table | 3 | planned |
-| NFR-03 | 10 re-ingests leave counts unchanged | `ReingestTenTimesIT` (Testcontainers) | CI | 1 | planned |
+| NFR-03 | 10 re-ingests leave counts unchanged | `IngestionApiIT.tenUploadsOfTheSameStatementCreateExactlyOneIngestion` (real HTTP, real PostgreSQL) | CI | 2 | done |
 | NFR-04 | Identical output hashes on replay | Replay test in CI | CI | 3 | planned |
-| NFR-05 | No floating point in money paths | ArchUnit rule plus bytecode scan test | CI | 1 | planned |
+| NFR-05 | No floating point in money paths | `SourcePolicyTest` source scan and `ArchitectureTest` (BigDecimal confined to `ingestion.normalise`); re-verified as each phase adds code | CI | 1 onward | in progress |
 | NFR-06 | Tampering detected | `AuditTamperDetectionIT` edits one row, expects failure at that seq | CI, README | 5 | planned |
 | NFR-07 | Metrics exported | `MetricsExportIT` reads the registry for each named metric | CI | 6 | planned |
-| NFR-08 | 85 percent line coverage on `domain` and `matching`, merge blocked below | JaCoCo check bound to `verify`, enforced by the CI workflow | CI, coverage badge | 1 onward | planned |
+| NFR-08 | 85 percent line coverage on `domain` and `matching`, merge blocked below | JaCoCo check bound to `verify`, run by the CI workflow (`matching` has no code until Phase 3) | CI | 1 onward | in progress |
 
 ## Master-prompt additions (not in the BRD)
 
