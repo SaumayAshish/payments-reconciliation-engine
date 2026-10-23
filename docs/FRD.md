@@ -213,7 +213,7 @@ A line leaves the pipeline at the first tier that confirms it. Every match store
 | AC-04.2 | **Given** equal reference, amount, currency and value dates two business days apart, **then** Tier 2 matches with score 0.93 and the reason names the distance. |
 | AC-04.3 | **Given** equal amount and currency, reference differs, counterparty tokens overlap strongly, dates within W, **then** Tier 3 matches with a score in `[0.70, 0.949]`. |
 | AC-04.4 | **Given** a statement line of 1,000.00 and ledger entries of 600.00, 300.00 and 100.00 in the window, **then** Tier 4 proposes the three-entry match; **given** the reverse (three statement lines, one ledger entry), it proposes that too. |
-| AC-04.5 | **Given** more than 8 plausible components, **then** only the 8 best candidates by the deterministic order are considered, and the run records `TIER4_CANDIDATES_TRUNCATED` in its output. |
+| AC-04.5 | **Given** more than 8 plausible components, **then** only the 8 best candidates by the deterministic order are considered, and the run records `TIER4_CANDIDATES_TRUNCATED` in its output. |The reason of every proposal found by a truncated search ends with ; candidate search truncated, other decompositions may exist.|
 | AC-04.6 | **Given** two subsets that both sum to the target, **then** no auto-confirm happens; the item goes to review with both subsets as candidates. |
 | AC-04.7 | **Given** any stored match, **then** `tier`, `score` and `reason` are present and the reason is non-empty. |
 | AC-04.8 | **Given** the hard-negative corpus (look-alikes that must not match), **then** none is auto-confirmed (NFR-02). |

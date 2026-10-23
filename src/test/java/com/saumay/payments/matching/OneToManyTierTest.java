@@ -315,4 +315,20 @@ class OneToManyTierTest {
         keys.sort(null);
         return (singleIsStatement ? "S:" : "L:") + single.key().value() + "=" + String.join(",", keys);
     }
+    @Test
+    void aProposalFoundInATruncatedSearchSaysSoInItsReason() {
+        MatchableLine settlement = statement(0, "S1", 1000, FRIDAY);
+        List<MatchableLine> ledger = new ArrayList<>();
+        ledger.add(entry(0, "L1", 600, FRIDAY));
+        ledger.add(entry(1, "L2", 400, FRIDAY));
+        for (int i = 2; i < 10; i++) {
+            ledger.add(entry(i, "F" + i, 999 - i, FRIDAY));
+        }
+
+        TierOutcome outcome = run(List.of(settlement), ledger);
+
+        assertEquals(1, outcome.notes().size());
+        assertEquals(1, outcome.matches().size());
+        assertTrue(outcome.matches().get(0).reason().endsWith("; " + OneToManyTier.TRUNCATED_REASON));
+    }
 }

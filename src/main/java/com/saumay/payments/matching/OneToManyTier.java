@@ -3,6 +3,7 @@ package com.saumay.payments.matching;
 import com.saumay.payments.domain.model.BusinessCalendar;
 import com.saumay.payments.domain.model.LineKey;
 import com.saumay.payments.domain.money.CurrencyCode;
+
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,6 +33,10 @@ import java.util.Set;
 public final class OneToManyTier {
 
     public static final String TRUNCATED_NOTE = "TIER4_CANDIDATES_TRUNCATED";
+    /**
+     * Added to the reason of a proposal found in a truncated search: other decompositions may exist unseen.
+     */
+    public static final String TRUNCATED_REASON = "candidate search truncated, other decompositions may exist";
 
     static final int BATCH_REFERENCE_BONUS_MILLI = 70;
     static final int SAME_DATE_BONUS_MILLI = 30;
@@ -86,7 +91,8 @@ public final class OneToManyTier {
                 continue;
             }
             List<Candidate> eligible = eligible(single, bucket, config);
-            if (eligible.size() > config.maxOneToManyCandidates()) {
+            boolean truncated = eligible.size() > config.maxOneToManyCandidates();
+            if (truncated) {
                 notes.add(TRUNCATED_NOTE + ": " + (singleIsStatement ? "statement " : "ledger ") + single.key()
                         + " had " + eligible.size() + " eligible candidates, considered "
                         + config.maxOneToManyCandidates());
@@ -95,12 +101,14 @@ public final class OneToManyTier {
             List<List<MatchableLine>> solutions = new ArrayList<>();
             search(eligible, 0, single.line().amount().abs().minorUnits(), new ArrayList<>(), solutions);
             for (List<MatchableLine> components : solutions) {
-                out.add(proposal(single, singleIsStatement, components));
+                out.add(proposal(single, singleIsStatement, components, truncated));
             }
         }
     }
 
-    /** Lines in the same bucket, strictly smaller than the single line and inside the date window, best first. */
+    /**
+     * Lines in the same bucket, strictly smaller than the single line and inside the date window, best first.
+     */
     private static List<Candidate> eligible(MatchableLine single, List<MatchableLine> bucket,
                                             MatchingConfig config) {
         int window = config.dateWindowBusinessDays();
@@ -160,7 +168,7 @@ public final class OneToManyTier {
     }
 
     private static Proposal proposal(MatchableLine single, boolean singleIsStatement,
-                                     List<MatchableLine> components) {
+                                     List<MatchableLine> components, boolean truncated) {
         List<MatchableLine> ordered = new ArrayList<>(components);
         ordered.sort(MatchableLine.CANONICAL_ORDER);
         boolean batchReference = true;
@@ -175,7 +183,7 @@ public final class OneToManyTier {
         String reason = "ONE_TO_MANY: " + (singleIsStatement ? "statement line equals the sum of "
                 + ordered.size() + " ledger entries" : "ledger entry equals the sum of " + ordered.size()
                 + " statement lines") + (batchReference ? "; batch reference shared" : "")
-                + (sameDate ? "; value dates equal" : "");
+                + (sameDate ? "; value dates equal" : "") + (truncated ? "; " + TRUNCATED_REASON : "");
         return new Proposal(single, singleIsStatement, ordered, score, reason);
     }
 
