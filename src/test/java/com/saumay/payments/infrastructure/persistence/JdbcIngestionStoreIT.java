@@ -63,7 +63,7 @@ class JdbcIngestionStoreIT {
     @BeforeEach
     void emptyTheTables() {
         jdbc.execute("DROP TRIGGER IF EXISTS trg_simulated_crash ON statement_line");
-        jdbc.execute("TRUNCATE rejected_line, statement_line, ledger_entry, ingestion_file RESTART IDENTITY");
+        jdbc.execute("TRUNCATE rejected_line, statement_line, ledger_entry, ingestion_file RESTART IDENTITY CASCADE");
     }
 
     @Test

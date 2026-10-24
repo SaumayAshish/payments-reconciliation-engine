@@ -10,6 +10,7 @@ import com.saumay.payments.ingestion.IngestionRequest;
 import com.saumay.payments.ingestion.IngestionStore;
 import com.saumay.payments.ingestion.LedgerEntryIdResolver;
 import com.saumay.payments.ingestion.RejectedLine;
+
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Types;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
+
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -69,6 +71,8 @@ public final class JdbcIngestionStore implements IngestionStore {
     }
 
     private IngestionOutcome storeInTransaction(IngestionRequest request) {
+        // Held until commit: a reconciliation run waits for every ingestion in flight (ADR-0003 amendment).
+        AdvisoryLocks.shared(jdbc, AdvisoryLocks.RUN_CUTOFF);
         lock(lockKey(request.kind(), request.fileHash()));
 
         List<IngestionOutcome> existing = jdbc.query(FIND_FILE,
@@ -165,13 +169,14 @@ public final class JdbcIngestionStore implements IngestionStore {
         });
     }
 
-    /** First 64 bits of SHA-256 over the file identity: stable across restarts and machines. */
+    /**
+     * First 64 bits of SHA-256 over the file identity: stable across restarts and machines.
+     */
     static long lockKey(LineSource kind, ContentHash fileHash) {
         return keyOf(kind.name() + ":" + fileHash.hex());
     }
 
     private static long keyOf(String identity) {
-        String digest = ContentHash.ofUtf8(identity).hex();
-        return Long.parseUnsignedLong(digest.substring(0, 16), 16);
+        return AdvisoryLocks.keyOf(identity);
     }
 }

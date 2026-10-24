@@ -51,7 +51,7 @@ class SchemaMigrationIT {
     void emptyTheTables() throws SQLException {
         // TRUNCATE is deliberately not blocked by the immutability triggers, so tests can reset state.
         try (Connection c = connect(); Statement s = c.createStatement()) {
-            s.execute("TRUNCATE rejected_line, statement_line, ledger_entry, ingestion_file RESTART IDENTITY");
+            s.execute("TRUNCATE rejected_line, statement_line, ledger_entry, ingestion_file RESTART IDENTITY CASCADE");
         }
     }
 
