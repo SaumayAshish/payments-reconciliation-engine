@@ -49,6 +49,22 @@ public final class ReconciliationRunService {
         return store.find(runId).orElseThrow(() -> new IllegalStateException("A completed run is missing"));
     }
 
+    /** The stored run, whatever state it is in. */
+    public RunHeader get(long runId) {
+        return store.find(runId).orElseThrow(
+                () -> new RunRejectedException(RunErrorCode.RUN_NOT_FOUND, "No run exists with id " + runId));
+    }
+
+    /** The stored run, provided it completed; only a completed run has results and can be replayed. */
+    public RunHeader requireCompleted(long runId) {
+        RunHeader run = get(runId);
+        if (run.status() != RunStatus.COMPLETED) {
+            throw new RunRejectedException(RunErrorCode.RUN_NOT_COMPLETED,
+                    "Run " + runId + " is " + run.status() + "; only a completed run has results and can be replayed");
+        }
+        return run;
+    }
+
     /**
      * Recomputes a completed run from its stored inputs and configuration and compares the hash with the one stored
      * when it completed.
@@ -57,12 +73,7 @@ public final class ReconciliationRunService {
      *                              inputs no longer add up to what the run saw
      */
     public ReplayResult replay(long runId) {
-        RunHeader run = store.find(runId).orElseThrow(
-                () -> new RunRejectedException(RunErrorCode.RUN_NOT_FOUND, "No run exists with id " + runId));
-        if (run.status() != RunStatus.COMPLETED) {
-            throw new RunRejectedException(RunErrorCode.RUN_NOT_COMPLETED,
-                    "Only a completed run can be replayed; run " + runId + " is " + run.status());
-        }
+        RunHeader run = requireCompleted(runId);
         RunInputs inputs = store.loadInputs(runId);
         RunSummary seen = run.summary();
         if (inputs.statements().size() != seen.statementLines() || inputs.ledger().size() != seen.ledgerEntries()) {
