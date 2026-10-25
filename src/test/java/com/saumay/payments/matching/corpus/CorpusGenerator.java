@@ -71,6 +71,14 @@ public final class CorpusGenerator {
     private static final int ORDINARY_MODULUS = 11;
     private static final int ORDINARY_RESIDUE = 1;
 
+    /**
+     * An amount range of d digits holds only about 0.09 * 10^d values, and ordinary lines share them. When a
+     * range is used up, the search widens by one digit after this many failed draws (up to MAX_AMOUNT_DIGITS).
+     * Below that point the draw sequence is untouched, so every corpus that could be built before is unchanged.
+     */
+    private static final int EXHAUSTED_AFTER_FAILURES = 10_000;
+    private static final int MAX_AMOUNT_DIGITS = 12;
+
     /** One true transaction before it is turned into lines. */
     private record Txn(Account account, long amount, LocalDate date, String reference, String counterparty) {
 
@@ -463,8 +471,10 @@ public final class CorpusGenerator {
     }
 
     private long uniqueAmountNoReserve(int minDigits, int maxDigits) {
+        int widest = maxDigits;
+        int failures = 0;
         while (true) {
-            int digits = minDigits + random.nextInt(maxDigits - minDigits + 1);
+            int digits = minDigits + random.nextInt(widest - minDigits + 1);
             long low = pow10(digits - 1);
             long amount = low + random.nextLong(9 * low);
             amount = amount - amount % ORDINARY_MODULUS + ORDINARY_RESIDUE;
@@ -473,6 +483,10 @@ public final class CorpusGenerator {
             }
             if (!usedAmounts.contains(amount)) {
                 return amount;
+            }
+            failures++;
+            if (failures % EXHAUSTED_AFTER_FAILURES == 0 && widest < MAX_AMOUNT_DIGITS) {
+                widest++;
             }
         }
     }
