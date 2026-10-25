@@ -48,4 +48,19 @@ public final class BusinessCalendar {
         }
         return Math.toIntExact(result);
     }
+
+    /**
+     * The business day that is {@code days} business days after {@code start}, after a weekend start has rolled
+     * forward. For a non-negative distance it is the exact inverse of {@link #businessDaysBetween}.
+     */
+    public static LocalDate addBusinessDays(LocalDate start, int days) {
+        if (days < 0) {
+            throw new IllegalArgumentException("days must not be negative: " + days);
+        }
+        LocalDate date = rollForward(start);
+        for (int remaining = days; remaining > 0; remaining--) {
+            date = rollForward(date.plusDays(1));
+        }
+        return date;
+    }
 }
