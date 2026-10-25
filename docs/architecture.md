@@ -243,13 +243,20 @@ erDiagram
     INGESTION_FILE ||--o{ STATEMENT_LINE : contains
     INGESTION_FILE ||--o{ LEDGER_ENTRY : contains
     INGESTION_FILE ||--o{ REJECTED_LINE : rejects
-    RECON_RUN ||--o{ MATCH : produces
-    RECON_RUN ||--o{ EXCEPTION_CASE : raises
-    MATCHING_CONFIG ||--o{ RECON_RUN : "configVersion"
-    STATEMENT_LINE ||--o{ MATCH_STATEMENT_LINE : "in"
-    LEDGER_ENTRY ||--o{ MATCH_LEDGER_ENTRY : "in"
-    MATCH ||--|{ MATCH_STATEMENT_LINE : has
-    MATCH ||--|{ MATCH_LEDGER_ENTRY : has
+    RECONCILIATION_RUN ||--o{ RECONCILIATION_RUN_STATEMENT_BATCH : reconciles
+    INGESTION_FILE ||--o{ RECONCILIATION_RUN_STATEMENT_BATCH : "named by"
+    RECONCILIATION_RUN ||--o{ RUN_MATCH : produces
+    RUN_MATCH ||--|{ RUN_MATCH_LINE : has
+    RECONCILIATION_RUN ||--o{ RUN_EXCEPTION : raises
+    RUN_EXCEPTION ||--|{ RUN_EXCEPTION_LINE : has
+    RECONCILIATION_RUN ||--o{ RUN_CARRIED_FORWARD : leaves
+    RECONCILIATION_RUN ||--o{ RUN_NOTE : notes
+    STATEMENT_LINE ||--o{ RUN_MATCH_LINE : "in"
+    LEDGER_ENTRY ||--o{ RUN_MATCH_LINE : "in"
+    STATEMENT_LINE ||--o{ RUN_EXCEPTION_LINE : "in"
+    LEDGER_ENTRY ||--o{ RUN_EXCEPTION_LINE : "in"
+    LEDGER_ENTRY ||--o{ RUN_CARRIED_FORWARD : "in"
+    RUN_EXCEPTION ||--o| EXCEPTION_CASE : "case opened from (planned, Phase 4)"
     EXCEPTION_CASE ||--o{ EXCEPTION_ASSIGNMENT : history
     EXCEPTION_CASE ||--o{ EXCEPTION_COMMENT : timeline
     EXCEPTION_CASE ||--o{ EXCEPTION_ATTACHMENT : metadata
@@ -286,21 +293,58 @@ erDiagram
         text reference_norm
         text counterparty_norm
     }
-    RECON_RUN {
+    RECONCILIATION_RUN {
         bigint id PK
         date business_date
-        int config_version FK
+        text status "CREATED, RUNNING, COMPLETED, FAILED"
         bigint ledger_cutoff_seq
-        text status
-        char64 output_hash
+        int auto_threshold_milli "plus six more configuration snapshot columns"
+        char64 output_hash "set when COMPLETED"
+        text failure_reason "set when FAILED"
     }
-    MATCH {
-        bigint id PK
-        bigint run_id FK
+    RECONCILIATION_RUN_STATEMENT_BATCH {
+        bigint run_id PK
+        bigint ingestion_id PK
+    }
+    RUN_MATCH {
+        bigint run_id PK
+        int ordinal PK
         text tier
-        numeric score "0 to 1, scaled int in code"
+        int score_milli "0 to 1000"
+        text band
         text reason
-        text state "CONFIRMED, REVERSED"
+    }
+    RUN_MATCH_LINE {
+        bigint run_id PK
+        int match_ordinal PK
+        int position PK
+        bigint statement_seq FK "exactly one of the two"
+        bigint ledger_seq FK "exactly one of the two"
+    }
+    RUN_EXCEPTION {
+        bigint run_id PK
+        int ordinal PK
+        text kind
+        text natural_key "UNIQUE per run"
+        text reason
+        text detail
+    }
+    RUN_EXCEPTION_LINE {
+        bigint run_id PK
+        int exception_ordinal PK
+        text role PK "SUBJECT or CANDIDATE"
+        int position PK
+        bigint statement_seq FK "exactly one of the two"
+        bigint ledger_seq FK "exactly one of the two"
+    }
+    RUN_CARRIED_FORWARD {
+        bigint run_id PK
+        bigint ledger_seq PK
+    }
+    RUN_NOTE {
+        bigint run_id PK
+        int ordinal PK
+        text note
     }
     EXCEPTION_CASE {
         bigint id PK
@@ -335,7 +379,7 @@ erDiagram
     }
 ```
 
-Score is shown as `numeric` in the diagram for readability; in code and storage it is a scaled integer (`score_milli`, 0 to 1000) so no floating point reaches a comparison against a threshold.
+Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating point reaches a comparison against a threshold. The run tables (`RECONCILIATION_RUN` and the `RUN_` tables) are built in migration V3 and are append-only. `EXCEPTION_CASE` and the approval, comment, attachment, assignment and audit tables are still the Phase 0 proposal for Phases 4 and 5; a persistent `MATCH` with a `CONFIRMED` or `REVERSED` state arrives with manual matching and unmatch in Phase 4.
 
 ### 7.1 Key indexes and why
 
@@ -352,11 +396,14 @@ Score is shown as `numeric` in the diagram for readability; in code and storage 
 | `(entity_type, entity_id, seq)` on `audit_event` | Per-entity history view |
 | `UNIQUE (seq)` and a trigger rejecting `UPDATE` and `DELETE` on `audit_event` | Append-only (AC-09.6) |
 | Partial unique index on `match_ledger_entry (ledger_seq)` where match state is `CONFIRMED` | A candidate has at most one active match (AC-05.4), enforced by the database, not only the code |
+| `ix_reconciliation_run (business_date, id)` | Find the runs for a business date (built, V3) |
+| `UNIQUE (run_id, natural_key)` on `run_exception` | One exception per kind and first subject line in a run (AC-06.3, built, V3) |
+| Partial indexes on `statement_seq` and `ledger_seq` of `run_match_line` and `run_exception_line` | Reverse lookup: which run decided about this line (built, V3). The primary keys already serve "everything in run X" |
 
 ### 7.2 Transactions and concurrency
 
-- Ingestion: one transaction per file, advisory lock on the hash.
-- Run: one transaction per run. A run that fails leaves no partial matches or exceptions.
+- Ingestion: one transaction per file, advisory lock on the hash, and a shared lock on the run cut-off so a run never reads a half-committed ingestion.
+- Run: `create` takes the exclusive ledger cut-off lock, reads the highest ledger sequence, writes the `CREATED` run and commits before matching starts, so every sequence at or below the cut-off is committed (ADR-0003 amendment). A run that fails is marked `FAILED` with a generic reason; the cause stays in the server log.
 - Cases: optimistic locking via `version`; conflicts return `CONCURRENT_MODIFICATION`.
 - Audit append: serialised with a transaction-scoped advisory lock so the chain stays linear.
 - Isolation: `READ COMMITTED` plus the constraints above. Revisit only if a test shows an anomaly.
