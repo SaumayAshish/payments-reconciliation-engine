@@ -17,7 +17,7 @@ The pure matching pipeline: `ReconciliationRun.compute` (all four tiers, resolut
 | JVM options | `-Xmx8g` |
 | Corpus | seed 20261022, generator version 1, `CorpusProfile.standard()` |
 | Matching configuration | `MatchingConfig.defaults()` |
-| Run conditions | TODO(author): confirm before publishing: charger plugged in, power mode, Docker/Edge/IntelliJ closed |
+| Run conditions | Charger plugged in; Windows power mode: Best performance; Docker, Edge and IntelliJ closed |
 
 ## Results: end-to-end runner (cold JVM)
 
