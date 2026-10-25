@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Payments Reconciliation and Exceptions Platform API
-  version: 0.2.0
+  version: 0.3.0
   description: >
-    Ingestion endpoints (Phase 2). Authentication and role enforcement arrive in Phase 8; until then the roles
+    Ingestion (Phase 2) and reconciliation run (Phase 3) endpoints. Authentication and role enforcement arrive in Phase 8; until then the roles
     shown in x-required-roles are documented intent, not enforced. All data is synthetic.
 servers:
   - url: http://localhost:8080
@@ -69,12 +69,104 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/IngestionDetail' }
         '404': { $ref: '#/components/responses/Error' }
+  /api/v1/reconciliations/runs:
+    post:
+      summary: Start a reconciliation run
+      description: >
+        Fixes the run's inputs (the named statement ingestions and every ledger entry committed at that moment),
+        matches them, stores the result and returns the finished run. Omitted configuration fields take the BRD
+        defaults. Error codes: RUN_REQUEST_INVALID and MALFORMED_REQUEST (400); RUN_UNKNOWN_INGESTION and
+        RUN_NOT_A_STATEMENT_INGESTION (422). A run that fails unexpectedly is stored as FAILED and the client
+        receives the generic INTERNAL_ERROR (500); the cause is in the server log only.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartRunRequest' }
+            example:
+              businessDate: '2026-10-09'
+              statementIngestionIds: [1]
+              config: { autoThresholdMilli: 950, reviewThresholdMilli: 700 }
+      responses:
+        '201':
+          description: The completed run
+          headers:
+            Location: { schema: { type: string }, description: '/api/v1/reconciliations/runs/{id}' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '400': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /api/v1/reconciliations/runs/{id}:
+    get:
+      summary: Read a run
+      description: The run's definition, status, summary and output hash. Error code RUN_NOT_FOUND (404).
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/reconciliations/runs/{id}/results:
+    get:
+      summary: Page through a completed run's results
+      description: >
+        One view at a time, in ordinal order, paged by cursor: pass the previous page's nextAfter as after. A page
+        counts matches or exceptions, never lines. nextAfter is null on the last page. Error codes: RUN_NOT_FOUND
+        (404); RUN_NOT_COMPLETED (409); INVALID_RESULT_VIEW and INVALID_PAGE_PARAMETER (400).
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - name: view
+          in: query
+          schema: { type: string, enum: [matches, exceptions, carried-forward, notes], default: matches }
+        - name: after
+          in: query
+          description: Cursor. The last ordinal of the previous page (ledger sequence for carried-forward); 0 for the first page.
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: One page of the chosen view
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reconciliations/runs/{id}/replay:
+    post:
+      summary: Replay a completed run
+      description: >
+        Recomputes the run from its stored inputs and configuration and compares the new output hash with the one
+        stored when it completed (FRD-10). identical false means the stored inputs or the engine changed. The stored
+        run is never modified. Error codes: RUN_NOT_FOUND (404); RUN_NOT_COMPLETED and
+        RUN_REPLAY_INPUTS_UNAVAILABLE (409).
+      x-required-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: The two hashes and whether they agree
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReplayResult' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
 components:
   responses:
     Created:
       description: New ingestion stored
       headers:
-        Location: { schema: { type: string }, description: /api/v1/ingestions/{id} }
+        Location: { schema: { type: string }, description: '/api/v1/ingestions/{id}' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/IngestionResult' }
@@ -89,7 +181,7 @@ components:
       description: >
         Error. Codes: INGESTION_EMPTY_FILE, INGESTION_NO_DATA_ROWS, INGESTION_UNSUPPORTED_ENCODING,
         INGESTION_MALFORMED_CSV, INGESTION_INVALID_HEADER, INGESTION_MALFORMED_XML, INGESTION_MALFORMED_JSON (422);
-        INGESTION_FILE_TOO_LARGE (413); INGESTION_UNSUPPORTED_MEDIA_TYPE (415); INGESTION_NOT_FOUND (404).
+        INGESTION_FILE_TOO_LARGE (413); INGESTION_UNSUPPORTED_MEDIA_TYPE (415); INGESTION_NOT_FOUND (404). Run endpoints list their own codes.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
@@ -142,7 +234,7 @@ components:
         reference: { type: [string, 'null'] }
         counterparty: { type: [string, 'null'] }
         narrative: { type: [string, 'null'] }
-        entry_id: { type: [string, 'null'], description: 1 to 64 characters of letters, digits and . _ ':' / - }
+        entry_id: { type: [string, 'null'], description: "1 to 64 characters of letters, digits and . _ : / -" }
     ApiError:
       type: object
       required: [code, message, correlationId, timestamp, details]
@@ -158,3 +250,100 @@ components:
             properties:
               field: { type: string }
               issue: { type: string }
+    MatchingConfig:
+      type: object
+      description: Every field is optional in a request; an omitted field takes the BRD default shown.
+      properties:
+        autoThresholdMilli: { type: integer, default: 950, description: 'Score at or above which a match is confirmed automatically' }
+        reviewThresholdMilli: { type: integer, default: 700, description: Score at or above which a match goes to review }
+        dateWindowBusinessDays: { type: integer, default: 3, minimum: 1, maximum: 30 }
+        lookbackBusinessDays: { type: integer, default: 10, minimum: 1, maximum: 60 }
+        maxOneToManyCandidates: { type: integer, default: 8, minimum: 2, maximum: 12 }
+        fuzzyMinSimilarityMilli: { type: integer, default: 600 }
+        fuzzyCounterpartyWeightMilli: { type: integer, default: 600 }
+    StartRunRequest:
+      type: object
+      required: [businessDate, statementIngestionIds]
+      properties:
+        businessDate: { type: string, format: date }
+        statementIngestionIds: { type: array, minItems: 1, items: { type: integer, format: int64 } }
+        config: { $ref: '#/components/schemas/MatchingConfig' }
+    RunSummary:
+      type: object
+      properties:
+        statementLines: { type: integer }
+        ledgerEntries: { type: integer }
+        matches: { type: integer }
+        autoConfirmedMatches: { type: integer }
+        reviewMatches: { type: integer }
+        ambiguousGroups: { type: integer }
+        exceptions: { type: integer }
+        carriedForward: { type: integer }
+        truncationNotes: { type: integer }
+    RunDetail:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string, enum: [CREATED, RUNNING, COMPLETED, FAILED] }
+        businessDate: { type: string, format: date }
+        statementIngestionIds: { type: array, items: { type: integer, format: int64 } }
+        ledgerCutoffSeq: { type: integer, format: int64, description: Highest ledger sequence the run may read }
+        config: { $ref: '#/components/schemas/MatchingConfig' }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        durationMillis: { type: [integer, 'null'], format: int64 }
+        outputHash: { type: [string, 'null'], description: SHA-256 of the canonical output; set when the run completes }
+        summary: { oneOf: [{ $ref: '#/components/schemas/RunSummary' }, { type: 'null' }] }
+        failureReason: { type: [string, 'null'], description: Generic by design; the cause is in the server log }
+    ReplayResult:
+      type: object
+      required: [runId, storedHash, replayedHash, identical]
+      properties:
+        runId: { type: integer, format: int64 }
+        storedHash: { type: string }
+        replayedHash: { type: string }
+        identical: { type: boolean }
+    ResultLine:
+      type: object
+      properties:
+        source: { type: string, enum: [STATEMENT, LEDGER] }
+        seq: { type: integer, format: int64 }
+        reference: { type: string }
+        amountMinor: { type: integer, format: int64, description: 'Signed minor units, never a decimal' }
+        currency: { type: string, description: ISO 4217 code }
+        valueDate: { type: string, format: date }
+    MatchItem:
+      type: object
+      properties:
+        ordinal: { type: integer }
+        tier: { type: string, enum: [EXACT, TOLERANCE, FUZZY, ONE_TO_MANY] }
+        scoreMilli: { type: integer, minimum: 0, maximum: 1000 }
+        band: { type: string, enum: [AUTO_CONFIRM, REVIEW, EXCEPTION] }
+        reason: { type: string }
+        lines: { type: array, items: { $ref: '#/components/schemas/ResultLine' } }
+    ExceptionItem:
+      type: object
+      properties:
+        ordinal: { type: integer }
+        kind: { type: string, enum: [MISSING_LEDGER, MISSING_STATEMENT, AMOUNT_MISMATCH, CURRENCY_MISMATCH, LOW_CONFIDENCE, AMBIGUOUS_TIE] }
+        reason: { type: string }
+        detail: { type: string }
+        subjects: { type: array, items: { $ref: '#/components/schemas/ResultLine' } }
+        candidates: { type: array, description: 'At most 3, only for ties and mismatches', items: { $ref: '#/components/schemas/ResultLine' } }
+    ResultPage:
+      type: object
+      required: [runId, view, items, nextAfter]
+      properties:
+        runId: { type: integer, format: int64 }
+        view: { type: string, enum: [matches, exceptions, carried-forward, notes] }
+        items:
+          type: array
+          description: MatchItem, ExceptionItem, a ledger sequence (carried-forward) or a note (notes), by view
+          items:
+            oneOf:
+              - { $ref: '#/components/schemas/MatchItem' }
+              - { $ref: '#/components/schemas/ExceptionItem' }
+              - { type: integer, format: int64 }
+              - { type: string }
+        nextAfter: { type: [integer, 'null'], format: int64, description: Cursor for the next page; null on the last page }
