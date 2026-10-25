@@ -71,7 +71,7 @@ class JdbcRunStoreIT {
     @BeforeEach
     void emptyTheTables() {
         jdbc.execute("DROP TRIGGER IF EXISTS trg_slow_ledger ON ledger_entry");
-        jdbc.execute("TRUNCATE run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
+        jdbc.execute("TRUNCATE case_attachment, case_comment, case_assignment, case_activity, exception_case, run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
                 + " run_match, reconciliation_run_statement_batch, reconciliation_run, rejected_line,"
                 + " statement_line, ledger_entry, ingestion_file RESTART IDENTITY");
     }
