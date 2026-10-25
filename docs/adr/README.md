@@ -9,6 +9,7 @@ Each ADR records one decision: context, decision, alternatives rejected, consequ
 | [0003](0003-deterministic-matching.md) | Deterministic matching and claim resolution | Accepted | FR-04, FR-05, FR-10, NFR-02, NFR-04 |
 | [0004](0004-hash-chained-audit-log.md) | Append-only, hash-chained audit log | Accepted | FR-09, NFR-06 |
 | [0005](0005-postgresql-system-of-record-and-outbox.md) | PostgreSQL system of record, JDBC access, transactional outbox | Accepted | FR-13, NFR-01 |
+| [0006](0006-tier4-candidate-bound.md) | Tier 4 candidate bound stays at 8 | Accepted | FR-04, FR-05, NFR-02 |
 
 Planned (written when the decision is actually made, not before): exception state machine and reopen policy (Q-08), configuration versioning, interim actor identity (Q-13), authentication approach (Phase 8), event schema format (Phase 7).
 
