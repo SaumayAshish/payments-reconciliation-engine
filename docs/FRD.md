@@ -141,6 +141,46 @@ Parsed with a hardened StAX reader (no DTDs, no external entities). Supported: `
 - D-03 Ledger JSON accepts only string or null values; a JSON number for `amount` is refused (ADR-0001: money enters as text).
 - D-04 The camt.053 end-to-end id `NOTPROVIDED` is treated as a missing reference.
 
+### 4.7 Reconciliation run records
+
+A run (`reconciliation_run`, migration V3) is fixed by its business date, its matching configuration, the statement ingestions it names and its ledger cut-off. The API uses the camel-case names below; the columns are snake_case.
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `id` | bigint | Identity |
+| `businessDate` | date | Fixed at creation |
+| `status` | enum `CREATED`, `RUNNING`, `COMPLETED`, `FAILED` | Moves forward only: `CREATED` to `RUNNING` or `FAILED`, `RUNNING` to `COMPLETED` or `FAILED`. Enforced by a database trigger, together with a check that a completed run carries its hash and counts and a failed run carries a reason |
+| `ledgerCutoffSeq` | bigint, 0 or more | Highest ledger sequence the run may read; taken under an exclusive advisory lock (ADR-0003 amendment) |
+| `statementIngestionIds` | set of ingestion ids | Stored in `reconciliation_run_statement_batch`; each must be a statement ingestion |
+| configuration | seven integers | `autoThresholdMilli` 1 to 1000; `reviewThresholdMilli` 1 to 999 and below the auto threshold; `dateWindowBusinessDays` 1 to 30; `lookbackBusinessDays` 1 to 60 and not below the window; `maxOneToManyCandidates` 2 to 12; `fuzzyMinSimilarityMilli` 1 to 999; `fuzzyCounterpartyWeightMilli` 0 to 1000. A snapshot on the run; it can never change (versioned, audited configuration arrives in Phase 5) |
+| `createdAt`, `startedAt`, `completedAt` | timestamps | Metadata only, never part of the hash |
+| `durationMillis` | bigint, 0 or more | Set when the run completes |
+| `outputHash` | 64 lower-case hex characters | SHA-256 of the canonical output; set only on `COMPLETED` |
+| summary counts | integers | `statementLines`, `ledgerEntries`, `matches`, `autoConfirmedMatches`, `reviewMatches`, `ambiguousGroups`, `exceptions`, `carriedForward`, `truncationNotes`; all present on `COMPLETED` |
+| `failureReason` | text | Set only on `FAILED`; generic by design, the cause is in the server log |
+
+Result records are append-only evidence, written once and never updated or deleted (a trigger rejects both):
+
+| Record | Key | Content |
+| --- | --- | --- |
+| Match (`run_match`) | `(runId, ordinal)` | `tier` `EXACT`, `TOLERANCE`, `FUZZY` or `ONE_TO_MANY`; `scoreMilli` 0 to 1000; `band` `AUTO_CONFIRM`, `REVIEW` or `EXCEPTION`; `reason`. Its lines are in `run_match_line` by `position`; each line is a statement line or a ledger entry, never both |
+| Exception (`run_exception`) | `(runId, ordinal)` | `kind` `MISSING_LEDGER`, `MISSING_STATEMENT`, `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`, `LOW_CONFIDENCE` or `AMBIGUOUS_TIE`; `naturalKey`, unique within the run; `reason`; `detail`. Its lines are in `run_exception_line` with role `SUBJECT` or `CANDIDATE` |
+| Carried forward (`run_carried_forward`) | `(runId, ledgerSeq)` | A ledger entry the run saw and left alone because it is still inside the lookback window |
+| Note (`run_note`) | `(runId, ordinal)` | An engine note, for example a truncated one-to-many search |
+
+Run API error codes (all use the common error body):
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `RUN_NOT_FOUND` | 404 | No run with that id |
+| `RUN_NOT_COMPLETED` | 409 | Results or replay requested for a run that is not `COMPLETED` |
+| `RUN_REPLAY_INPUTS_UNAVAILABLE` | 409 | The stored inputs no longer match the run's recorded counts |
+| `RUN_UNKNOWN_INGESTION` | 422 | A named ingestion does not exist |
+| `RUN_NOT_A_STATEMENT_INGESTION` | 422 | A named ingestion is not a statement ingestion |
+| `RUN_REQUEST_INVALID` | 400 | Missing business date or ingestion ids, or an invalid configuration |
+| `INVALID_RESULT_VIEW` | 400 | `view` is not `matches`, `exceptions`, `carried-forward` or `notes` |
+| `INVALID_PAGE_PARAMETER` | 400 | `after` below 0, or `limit` outside 1 to 500 |
+| `MALFORMED_REQUEST` | 400 | The request body is not valid JSON |
 ## 5. Functional requirements
 
 ### FRD-01 Idempotent statement ingestion (FR-01, Must)
