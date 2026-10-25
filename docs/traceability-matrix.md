@@ -4,6 +4,10 @@ Maps each BRD requirement to its FRD requirement, planned implementation, planne
 
 Status values: `planned` (designed, no code), `in progress`, `done` (test green in CI, evidence linked). Class and test names are proposals and may change during implementation; the matrix is updated in the same commit.
 
+Phase 4 status (in progress): ADR-0007 and ADR-0008 accepted; FR-06, FR-07 and FR-12 in progress.
+
+Recorded deviation (AC-05.2): review-band exceptions carry the proposed match only, not the top 3 candidates. Ranking three candidates would change the engine output and the Phase 3 hashes, so it is deferred and tracked as technical debt.
+
 Phase 3 status: **FR-01 to FR-05 and FR-10 done; NFR-02, NFR-03 and NFR-04 done; NFR-01 in progress (engine measured, database-backed timing in Phase 10); NFR-05 and NFR-08 in progress; all others planned.**
 
 ## Functional requirements
@@ -15,13 +19,13 @@ Phase 3 status: **FR-01 to FR-05 and FR-10 done; NFR-02, NFR-03 and NFR-04 done;
 | FR-03 | FRD-03 | Must | `IngestionService` (CSV and JSON ledger), `LedgerJsonParser`, `LedgerEntryIdResolver`, V2 unique `entry_id` index | `LedgerJsonParserTest`, `LedgerEntryIdResolverTest`, `IngestionApiIT` (canonical JSON identity, CSV vs JSON equivalence, entry id duplicate, conflict, same-file and concurrent reuse) | CI | 2 | done |
 | FR-04 | FRD-04 | Must | `ExactTier`, `ToleranceTier`, `FuzzyTier`, `OneToManyTier`, `PairResolver`, `MatchingPipeline`, `ExceptionClassifier` | `ExactTierTest`, `ToleranceTierTest`, `FuzzyTierTest`, `OneToManyTierTest`, `PairResolverTest`, `MatchingPipelineTest`, `ExceptionClassifierTest`, `CorpusEvaluationTest` (hard negatives, crowded layout) | CI; `docs/benchmarks.md` (92.4 percent auto-confirmed at 10K, 100K and 1M lines); ADR-0006 | 3 | done |
 | FR-05 | FRD-05 | Must | `MatchingConfig`, `MatchScore`, `MatchTier`, `PairResolver` (ties are never auto-confirmed) | `MatchingConfigTest`, `MatchScoreTest`, `MatchTierTest`, `PairResolverTest`, `MatchingDeterminismTest` | CI; audited configuration changes arrive with FR-09 in Phase 5 | 3 | done |
-| FR-06 | FRD-06 | Must | `ExceptionFactory`, `RoutingRules`, `SlaPolicy` | `ExceptionCreationIT`, `RoutingRulesTest`, `RerunNoDuplicateExceptionsIT` | CI | 3 to 4 | planned |
-| FR-07 | FRD-07 | Must | `ExceptionStateMachine`, `ExceptionCase` | `StateMachineAllPairsTest`, `OptimisticLockConflictIT` | CI | 4 | planned |
+| FR-06 | FRD-06 | Must | `ExceptionFactory`, `RoutingRules`, `SlaPolicy` | `ExceptionCreationIT`, `RoutingRulesTest`, `RerunNoDuplicateExceptionsIT` | CI | 3 to 4 | in progress |
+| FR-07 | FRD-07 | Must | `ExceptionStateMachine`, `ExceptionCase` | `StateMachineAllPairsTest`, `OptimisticLockConflictIT` | CI | 4 | in progress |
 | FR-08 | FRD-08 | Must | `MakerCheckerPolicy`, `ApprovalService` | `SeparationOfDutiesTest`, `ThresholdBoundaryTest`, `ApprovalFlowIT` | CI, demo script | 5 | planned |
 | FR-09 | FRD-09 | Must | `AuditChain`, `AuditVerifier`, append-only trigger migration | `HashChainTest`, `AuditTamperDetectionIT`, `AuditAppendOnlyIT`, `ConcurrentAppendIT` | CI, README tamper test | 5 | planned |
 | FR-10 | FRD-10 | Must | `ReconciliationRun`, `CanonicalOutput`, `ReconciliationRunService`, `JdbcRunStore`, `ReconciliationController` (replay endpoint) | `ReconciliationRunTest`, `CanonicalOutputTest`, `MatchingDeterminismTest`, `ReconciliationRunServiceTest`, `JdbcRunStoreIT`, `ReconciliationApiIT`; AC-10.5 holds by construction but has no multi-thread test | CI; identical output hashes across repeats in `docs/benchmarks.md` | 3 | done |
 | FR-11 | FRD-11 | Should | `AgeingReport`, `SlaReport`, `EscalationJob` | `AgeingBucketTest`, `SlaStatusTest`, `ReportDeterminismTest` | CI | 6 | planned |
-| FR-12 | FRD-12 | Should | `ManualMatchService`, `UnmatchService` | `ManualMatchIT`, `SplitSumTest`, `UnmatchCreatesLinkedCaseIT` | CI | 4 | planned |
+| FR-12 | FRD-12 | Should | `ManualMatchService`, `UnmatchService` | `ManualMatchIT`, `SplitSumTest`, `UnmatchCreatesLinkedCaseIT` | CI | 4 | in progress |
 | FR-13 | FRD-13 | Could | `OutboxWriter`, `OutboxPublisher`, `ExceptionEventConsumer` | `OutboxAtomicityIT`, `KafkaDownIT`, `DuplicateEventIT` | CI | 7 | planned |
 | FR-14 | FRD-14 | Could | Thin read-only dashboard | UI smoke test | Screenshot in README | 9 | planned |
 
