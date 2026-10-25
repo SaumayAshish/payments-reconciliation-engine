@@ -142,3 +142,9 @@ are 7 ordinary accounts and 6 batch accounts. In the default layout each batch g
 another ordinary amount by accident. The truth model uses expected outcomes (auto exact, auto tolerance, review
 tolerance, review fuzzy, review one-to-many, ambiguous, unmatched) per case. NEAR_THRESHOLD is covered by
 MatchingConfigTest, not the corpus.
+
+## Amount ranges and generator capacity (added 2026-10-25)
+
+Every ordinary amount is unique across the corpus and congruent to 1 modulo 11. A range of d digits therefore holds only about 0.09 * 10^d such values, and all scenarios share them. The 2-to-6-digit range holds about 91,000 values, which capped the generator at roughly 130,000 statement lines; the first 1M-line benchmark found this when the generator looped forever.
+
+The generator now widens a draw by one digit (up to 12) after 10,000 consecutive failed attempts. Below that point the random sequence is unchanged, so every corpus that could be built before is identical (the 100,000-line output hash is the same before and after the change). Corpora of 1,000,000 lines now generate; the 1M corpus took 190 seconds to build on the benchmark machine (`docs/benchmarks.md`).

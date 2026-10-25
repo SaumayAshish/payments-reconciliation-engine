@@ -339,6 +339,8 @@ Output total order: matches by `(statementLineKey, tier, ledgerLineKey...)`; exc
 
 Edge cases: **EC-10.1** configuration changed since the run (replay uses the stored `configVersion`); **EC-10.2** entries ingested after the run (excluded by cut-off); **EC-10.3** time must never leak into output: run start and end timestamps are metadata excluded from the hash.
 
+**Implementation notes (Phase 3).** The run configuration is stored inline on the run record (the seven matching parameters) until audited configuration versions arrive in Phase 5, so `configVersion` is for now the stored parameter set itself. Replay is `POST /api/v1/reconciliations/runs/{id}/replay` (roles ADMIN and AUDITOR). Missing inputs return `RUN_REPLAY_INPUTS_UNAVAILABLE` (HTTP 409); a run that is not `COMPLETED` returns `RUN_NOT_COMPLETED` (409). AC-10.5 holds by construction (the engine is a single-threaded pure function) but no test yet runs it on several threads or JVMs; repeated runs in the benchmark runner produced identical hashes on one machine.
+
 ### FRD-11 Ageing and SLA reporting (FR-11, Should)
 
 | AC | Given / When / Then |
