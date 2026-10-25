@@ -226,4 +226,31 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- Benchmarks only: mvn -Pbench clean test-compile. Never part of the normal build. -->
+        <profile>
+            <id>bench</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                            <!-- JMH generates code; the strict -Werror gate stays on in the normal build. -->
+                            <compilerArgs combine.self="override">
+                                <arg>-Xlint:all,-processing</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
