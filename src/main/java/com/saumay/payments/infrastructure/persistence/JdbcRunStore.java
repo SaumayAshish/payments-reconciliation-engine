@@ -54,11 +54,23 @@ public final class JdbcRunStore implements RunStore {
 
     private static final String SELECT_INGESTIONS = "SELECT id, kind FROM ingestion_file WHERE id = ANY (?)";
     private static final String MAX_LEDGER_SEQ = "SELECT COALESCE(MAX(seq), 0) FROM ledger_entry";
+    private static final String MAX_CLAIM_SEQ = "SELECT COALESCE(MAX(seq), 0) FROM line_claim";
+    private static final String SELECT_CLAIM_CUTOFF = "SELECT claim_cutoff_seq FROM reconciliation_run WHERE id = ?";
+    // A line is free for a run unless a claim at or below the run's claim cut-off was still unreleased at that
+    // point (ADR-0009). The placeholders are the claim cut-off, twice; the line table is aliased t.
+    private static final String UNCLAIMED_AS_OF =
+            " AND NOT EXISTS (SELECT 1 FROM line_claim c WHERE c.action = 'CLAIM' AND c.%s = t.seq AND c.seq <= ?"
+                    + " AND NOT EXISTS (SELECT 1 FROM line_claim r WHERE r.releases_seq = c.seq AND r.seq <= ?))";
+    private static final String CLAIM_AUTO_CONFIRMED =
+            "INSERT INTO line_claim (action, statement_seq, ledger_seq, source, run_id, run_match_ordinal)"
+                    + " SELECT 'CLAIM', l.statement_seq, l.ledger_seq, 'RUN_MATCH', l.run_id, l.match_ordinal"
+                    + " FROM run_match_line l JOIN run_match m ON m.run_id = l.run_id AND m.ordinal = l.match_ordinal"
+                    + " WHERE l.run_id = ? AND m.band = 'AUTO_CONFIRM' ORDER BY l.match_ordinal, l.position";
     private static final String INSERT_RUN =
-            "INSERT INTO reconciliation_run (business_date, status, ledger_cutoff_seq, auto_threshold_milli,"
+            "INSERT INTO reconciliation_run (business_date, status, ledger_cutoff_seq, claim_cutoff_seq, auto_threshold_milli,"
                     + " review_threshold_milli, date_window_business_days, lookback_business_days,"
                     + " max_one_to_many_candidates, fuzzy_min_similarity_milli, fuzzy_counterparty_weight_milli)"
-                    + " VALUES (?, 'CREATED', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
+                    + " VALUES (?, 'CREATED', ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
     private static final String INSERT_BATCH =
             "INSERT INTO reconciliation_run_statement_batch (run_id, ingestion_id) VALUES (?, ?)";
     private static final String SELECT_RUN =
@@ -75,9 +87,11 @@ public final class JdbcRunStore implements RunStore {
             "seq, account, amount_minor, currency, value_date, booking_date, reference, reference_norm,"
                     + " counterparty, counterparty_norm, narrative, line_key";
     private static final String SELECT_STATEMENTS =
-            "SELECT " + LINE_COLUMNS + " FROM statement_line WHERE ingestion_id = ANY (?) ORDER BY seq";
+            "SELECT " + LINE_COLUMNS + " FROM statement_line t WHERE t.ingestion_id = ANY (?)"
+                    + String.format(UNCLAIMED_AS_OF, "statement_seq") + " ORDER BY t.seq";
     private static final String SELECT_LEDGER =
-            "SELECT " + LINE_COLUMNS + " FROM ledger_entry WHERE seq <= ? ORDER BY seq";
+            "SELECT " + LINE_COLUMNS + " FROM ledger_entry t WHERE t.seq <= ?"
+                    + String.format(UNCLAIMED_AS_OF, "ledger_seq") + " ORDER BY t.seq";
     private static final String MARK_RUNNING =
             "UPDATE reconciliation_run SET status = 'RUNNING', started_at = now() WHERE id = ? AND status = 'CREATED'";
     private static final String MARK_COMPLETED =
@@ -121,9 +135,10 @@ public final class JdbcRunStore implements RunStore {
         requireStatementIngestions(request.statementIngestionIds());
 
         long cutoff = Objects.requireNonNull(jdbc.queryForObject(MAX_LEDGER_SEQ, Long.class));
+        long claimCutoff = Objects.requireNonNull(jdbc.queryForObject(MAX_CLAIM_SEQ, Long.class));
         MatchingConfig c = request.config();
         long runId = Objects.requireNonNull(jdbc.queryForObject(INSERT_RUN, Long.class,
-                request.businessDate(), cutoff, c.autoThresholdMilli(), c.reviewThresholdMilli(),
+                request.businessDate(), cutoff, claimCutoff, c.autoThresholdMilli(), c.reviewThresholdMilli(),
                 c.dateWindowBusinessDays(), c.lookbackBusinessDays(), c.maxOneToManyCandidates(),
                 c.fuzzyMinSimilarityMilli(), c.fuzzyCounterpartyWeightMilli()));
         jdbc.batchUpdate(INSERT_BATCH, request.statementIngestionIds(), BATCH_SIZE, (ps, ingestionId) -> {
@@ -201,15 +216,20 @@ public final class JdbcRunStore implements RunStore {
     public RunInputs loadInputs(long runId) {
         RunHeader run = find(runId).orElseThrow(
                 () -> new RunRejectedException(RunErrorCode.RUN_NOT_FOUND, "No run exists with id " + runId));
+        long claimCutoff = Objects.requireNonNull(jdbc.queryForObject(SELECT_CLAIM_CUTOFF, Long.class, runId));
         List<MatchableLine> statements = jdbc.execute((ConnectionCallback<List<MatchableLine>>) connection -> {
             try (PreparedStatement ps = connection.prepareStatement(SELECT_STATEMENTS)) {
                 ps.setArray(1, bigintArray(connection, run.statementIngestionIds()));
+                ps.setLong(2, claimCutoff);
+                ps.setLong(3, claimCutoff);
                 return readLines(ps, LineSource.STATEMENT);
             }
         });
         List<MatchableLine> ledger = jdbc.execute((ConnectionCallback<List<MatchableLine>>) connection -> {
             try (PreparedStatement ps = connection.prepareStatement(SELECT_LEDGER)) {
                 ps.setLong(1, run.ledgerCutoffSeq());
+                ps.setLong(2, claimCutoff);
+                ps.setLong(3, claimCutoff);
                 return readLines(ps, LineSource.LEDGER);
             }
         });
@@ -258,6 +278,7 @@ public final class JdbcRunStore implements RunStore {
                             s.ambiguousGroups(), s.exceptions(), s.carriedForward(), s.truncationNotes(), runId),
                     runId, "complete");
             writeMatches(runId, result);
+            claimAutoConfirmedLines(runId);
             writeExceptions(runId, result);
             writeCarriedAndNotes(runId, result);
         });
@@ -372,6 +393,17 @@ public final class JdbcRunStore implements RunStore {
             ps.setNull(firstIndex, Types.BIGINT);
             ps.setLong(firstIndex + 1, line.seq());
         }
+    }
+
+    /**
+     * Claims every line of this run's auto-confirmed matches (ADR-0009). Review proposals claim nothing: they are
+     * suggestions until a person resolves them. The cut-off lock is held shared until commit, so a run that reads
+     * its claim cut-off waits for this transaction. If another run claimed one of the lines first the database
+     * refuses the insert, the whole completion rolls back and the run ends FAILED instead of matching twice.
+     */
+    private void claimAutoConfirmedLines(long runId) {
+        AdvisoryLocks.shared(jdbc, AdvisoryLocks.RUN_CUTOFF);
+        jdbc.update(CLAIM_AUTO_CONFIRMED, runId);
     }
 
     private static Array bigintArray(Connection connection, List<Long> ids) throws SQLException {

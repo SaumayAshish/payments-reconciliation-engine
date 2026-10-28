@@ -182,7 +182,7 @@ class ReconciliationApiIT {
     }
 
     @Test
-    void twoRunsOverTheSameInputsProduceTheSameHash() throws Exception {
+    void aLaterRunSeesOnlyUnclaimedLinesAndEveryRunStillReplaysIdentically() throws Exception {
         long statements = upload("/api/v1/ingestions/statements", STATEMENT);
         upload("/api/v1/ingestions/ledger", LEDGER);
 
@@ -190,8 +190,17 @@ class ReconciliationApiIT {
         String second = post(RUNS, runBody(statements)).body();
 
         assertNotEquals(field(first, "id"), field(second, "id"));
-        assertEquals(field(first, "outputHash"), field(second, "outputHash"));
+        // The first run claimed its auto-confirmed lines (ADR-0009), so the second run works on fewer inputs.
+        assertNotEquals(field(first, "outputHash"), field(second, "outputHash"));
         assertEquals(2, count("reconciliation_run"));
+        // Each run's own inputs are fixed by its cut-offs, so both replay to exactly their stored hash,
+        // the first one even though the second run happened after it.
+        for (String run : new String[] {first, second}) {
+            HttpResponse<String> replay = post(RUNS + "/" + field(run, "id") + "/replay", "");
+            assertEquals(200, replay.statusCode());
+            assertEquals("true", field(replay.body(), "identical"));
+            assertEquals(field(run, "outputHash"), field(replay.body(), "replayedHash"));
+        }
     }
 
     @Test
