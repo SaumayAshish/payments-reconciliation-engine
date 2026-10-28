@@ -65,6 +65,10 @@ exactly what it saw the first time, even though later matches and unmatches have
   refused, the run is marked FAILED) instead of producing a double match. Running reconciliations one after another
   is the intended use.
 - The claim table grows with every match; both side indexes are partial for that reason.
+- The per-line lock is hashed into 1,024 buckets (V6). One advisory lock per line would exhaust PostgreSQL's lock
+  table when a large run claims tens of thousands of lines in one transaction. With buckets, two writers on the
+  same line still collide and unrelated lines at worst share a bucket. Two bulk transactions that lock buckets in
+  a different order can deadlock; PostgreSQL aborts one, which fails safely (a run ends FAILED).
 
 ## Interview explanation
 
