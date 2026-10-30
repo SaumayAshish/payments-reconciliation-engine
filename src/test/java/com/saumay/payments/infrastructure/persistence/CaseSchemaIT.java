@@ -145,7 +145,8 @@ class CaseSchemaIT {
 
     @Test
     void originRulesAreEnforced() {
-        assertRejected(CHECK_VIOLATION, null, () -> insertUnmatchCase("NULL", "k-1"));
+        // V7: an unmatch of an auto-confirmed run match has no predecessor case, so a NULL link is legal.
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> insertUnmatchCase("NULL", "unlinked-unmatch"));
         assertRejected(FOREIGN_KEY_VIOLATION, null, () -> execute("INSERT INTO exception_case (origin, origin_run_id,"
                 + " origin_ordinal, natural_key, kind, case_class, amount_minor, currency, priority, team,"
                 + " routing_rule, created_business_date, sla_business_days, due_business_date) VALUES ('RUN', "
