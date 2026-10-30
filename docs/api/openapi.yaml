@@ -161,6 +161,24 @@ paths:
               schema: { $ref: '#/components/schemas/ReplayResult' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reconciliations/runs/{id}/exceptions:
+    post:
+      summary: Open the cases for a completed run
+      description: >
+        Creates a work item for every exception of the run. Safe to repeat: a case exists once per natural key, so a
+        second call creates nothing new and alreadyOpen counts the ones that were there. Phase 7 replaces this
+        explicit call with an event consumer.
+      x-required-roles: [ADMIN, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: How many exceptions the run holds and how many became new cases
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntakeResult' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /api/v1/exceptions:
     get:
       summary: List the exception queue
@@ -432,6 +450,14 @@ components:
             timestamp: '2026-10-20T16:30:00.123456Z'
             details: []
   schemas:
+    IntakeResult:
+      type: object
+      required: [runId, exceptions, created, alreadyOpen]
+      properties:
+        runId: { type: integer, format: int64 }
+        exceptions: { type: integer, description: Exceptions in the run }
+        created: { type: integer, description: Cases opened by this call }
+        alreadyOpen: { type: integer, description: Exceptions that already had a case }
     CaseSummary:
       type: object
       required: [id, kind, caseClass, amountMinor, currency, status, priority, team, routingRule, createdBusinessDate, slaBusinessDays, dueBusinessDate, version]

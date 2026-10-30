@@ -159,7 +159,7 @@ public class ReconciliationController {
         return new ApiException(HttpStatus.BAD_REQUEST, code, message);
     }
 
-    private static ApiException translate(RunRejectedException e) {
+    static ApiException translate(RunRejectedException e) {
         return switch (e.code()) {
             case RUN_NOT_FOUND -> new ApiException(HttpStatus.NOT_FOUND, "RUN_NOT_FOUND", e.getMessage());
             case RUN_NOT_COMPLETED -> new ApiException(HttpStatus.CONFLICT, "RUN_NOT_COMPLETED", e.getMessage());
