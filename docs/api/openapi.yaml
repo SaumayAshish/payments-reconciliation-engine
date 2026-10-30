@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Payments Reconciliation and Exceptions Platform API
-  version: 0.3.0
+  version: 0.4.0
   description: >
-    Ingestion (Phase 2) and reconciliation run (Phase 3) endpoints. Authentication and role enforcement arrive in Phase 8; until then the roles
+    Ingestion (Phase 2), reconciliation run (Phase 3) and exception management (Phase 4) endpoints. Authentication and role enforcement arrive in Phase 8; until then the roles
     shown in x-required-roles are documented intent, not enforced. All data is synthetic.
 servers:
   - url: http://localhost:8080
@@ -161,8 +161,248 @@ paths:
               schema: { $ref: '#/components/schemas/ReplayResult' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /api/v1/exceptions:
+    get:
+      summary: List the exception queue
+      description: >
+        Cases in id order. Filter by status, team, priority, kind and owner (enum values are case-insensitive).
+        Page with after (the nextAfter of the previous page) and limit (1 to 500, default 100).
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [OPEN, ASSIGNED, INVESTIGATING, RESOLVED, ESCALATED] } }
+        - { name: team, in: query, required: false, schema: { type: string } }
+        - { name: priority, in: query, required: false, schema: { type: string } }
+        - { name: kind, in: query, required: false, schema: { type: string } }
+        - { name: owner, in: query, required: false, schema: { type: string } }
+        - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        '200':
+          description: One page of cases
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CasePage' }
+        '400': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}:
+    get:
+      summary: Read one case in full
+      description: >
+        The case with its activity timeline, comments, assignments and the claim ledger rows that name it. Every
+        part comes from one consistent snapshot.
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: The case
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseDetail' }
+        '404': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}/assign:
+    post:
+      summary: Assign a case to an owner
+      description: >
+        OPEN to ASSIGNED, or reassignment while ASSIGNED. The caller names the version it last read; a stale
+        version is refused with 409.
+      x-required-roles: [ADMIN, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignRequest' }
+            example: { expectedVersion: 0, owner: alice, reason: Picking this up }
+      responses:
+        '200':
+          description: The updated case
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseSummary' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+        '409': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}/investigate:
+    post:
+      summary: Start investigating a case
+      description: ASSIGNED to INVESTIGATING. The case must have an owner.
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvestigateRequest' }
+            example: { expectedVersion: 1 }
+      responses:
+        '200':
+          description: The updated case
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseSummary' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+        '409': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}/escalate:
+    post:
+      summary: Escalate a case
+      description: INVESTIGATING to ESCALATED, with a mandatory reason.
+      x-required-roles: [ADMIN, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EscalateRequest' }
+            example: { expectedVersion: 2, reason: Needs a senior analyst }
+      responses:
+        '200':
+          description: The updated case
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseSummary' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+        '409': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}/comments:
+    post:
+      summary: Add a comment to a case
+      description: Comments are append-only and appear on the case timeline.
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentRequest' }
+            example: { body: Called the bank and they confirmed the payer }
+      responses:
+        '201':
+          description: Comment recorded
+          headers:
+            Location: { schema: { type: string }, description: '/api/v1/exceptions/{id}' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentCreated' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}/match:
+    post:
+      summary: Resolve a case by manual match or split
+      description: >
+        INVESTIGATING to RESOLVED by matching statement lines to ledger entries. One line against one is a manual
+        match. One against up to 8 on the other side is a split. Both sides must be in one currency and sum to
+        exactly the same amount. The case's own statement lines must be part of the match. A line already claimed
+        elsewhere is refused with 409 and nothing is written. Write-off and adjustment resolutions need
+        maker-checker and arrive in Phase 5.
+      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MatchRequest' }
+            example: { expectedVersion: 2, reason: Same payer and the bank changed the reference, statementSeqs: [42], ledgerSeqs: [97] }
+      responses:
+        '200':
+          description: The resolved case
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseSummary' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+        '409': { $ref: '#/components/responses/CaseError' }
+        '422': { $ref: '#/components/responses/CaseError' }
+  /api/v1/exceptions/{id}/unmatch:
+    post:
+      summary: Reverse the manual match of a resolved case
+      description: >
+        Releases the claims of the match and opens a new review case linked to this one. The resolved case stays
+        RESOLVED and records that its match was reversed. Unmatching twice is refused with 409.
+      x-required-roles: [ADMIN, TEAM_LEAD]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UnmatchRequest' }
+            example: { reason: Wrong payer }
+      responses:
+        '201':
+          description: The new review case
+          headers:
+            Location: { schema: { type: string }, description: '/api/v1/exceptions/{id}' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseSummary' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+        '409': { $ref: '#/components/responses/CaseError' }
+  /api/v1/reconciliations/runs/{runId}/matches/{ordinal}/unmatch:
+    post:
+      summary: Reverse an auto-confirmed run match
+      description: >
+        Releases the claims of the run match and opens a new review case with no linked case. The run result itself
+        is never changed, so replay still reproduces the stored hash.
+      x-required-roles: [ADMIN, TEAM_LEAD]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: ordinal, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { $ref: '#/components/parameters/Actor' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UnmatchRequest' }
+            example: { reason: Not the same invoice }
+      responses:
+        '201':
+          description: The new review case
+          headers:
+            Location: { schema: { type: string }, description: '/api/v1/exceptions/{id}' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseSummary' }
+        '400': { $ref: '#/components/responses/CaseError' }
+        '404': { $ref: '#/components/responses/CaseError' }
+        '409': { $ref: '#/components/responses/CaseError' }
 components:
+  parameters:
+    Actor:
+      name: X-Actor
+      in: header
+      required: true
+      description: The acting user. Until authentication arrives in Phase 8 the caller names itself here.
+      schema: { type: string, minLength: 1 }
   responses:
+    CaseError:
+      description: >
+        Case error in the standard error shape. 400 ACTOR_REQUIRED, REQUEST_INVALID, INVALID_FILTER,
+        INVALID_PAGE_PARAMETER, CASE_REQUEST_INVALID. 404 CASE_NOT_FOUND. 409 CASE_VERSION_CONFLICT,
+        ILLEGAL_STATE_TRANSITION, CASE_OWNER_REQUIRED, MATCH_LINE_ALREADY_CLAIMED, NOTHING_TO_UNMATCH. 422
+        MATCH_INVALID, MATCH_LINE_NOT_FOUND. A 409 means the world changed under the caller, so read the case again
+        and retry. A 422 means the request can never succeed as sent.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            code: CASE_VERSION_CONFLICT
+            message: The case was changed by someone else
+            correlationId: 6f1c2d9e-3b7a-4c1e-9d55-0a1b2c3d4e5f
+            timestamp: '2026-10-30T16:30:00.123456Z'
+            details: []
     Created:
       description: New ingestion stored
       headers:
@@ -192,6 +432,142 @@ components:
             timestamp: '2026-10-20T16:30:00.123456Z'
             details: []
   schemas:
+    CaseSummary:
+      type: object
+      required: [id, kind, caseClass, amountMinor, currency, status, priority, team, routingRule, createdBusinessDate, slaBusinessDays, dueBusinessDate, version]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [MISSING_LEDGER, MISSING_STATEMENT, AMOUNT_MISMATCH, CURRENCY_MISMATCH, DUPLICATE_SUSPECT, LOW_CONFIDENCE, AMBIGUOUS_TIE] }
+        caseClass: { type: string, description: BREAK or REVIEW }
+        amountMinor: { type: integer, format: int64, description: Amount in minor units of the currency }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        status: { type: string, enum: [OPEN, ASSIGNED, INVESTIGATING, RESOLVED, ESCALATED] }
+        priority: { type: string, description: Priority assigned by the routing rules }
+        team: { type: string, description: Team assigned by the routing rules }
+        routingRule: { type: string, description: The routing rule that chose the team and priority }
+        owner: { type: [string, 'null'] }
+        createdBusinessDate: { type: string, format: date }
+        slaBusinessDays: { type: integer }
+        dueBusinessDate: { type: string, format: date }
+        version: { type: integer, format: int64, description: Send this back as expectedVersion on the next write }
+    CasePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CaseSummary' }
+        nextAfter: { type: [integer, 'null'], format: int64, description: Pass as after for the next page; null on the last page }
+    CaseDetail:
+      type: object
+      properties:
+        summary: { $ref: '#/components/schemas/CaseSummary' }
+        origin: { type: string, enum: [RUN, UNMATCH] }
+        originRunId: { type: [integer, 'null'], format: int64 }
+        originOrdinal: { type: [integer, 'null'] }
+        linkedCaseId: { type: [integer, 'null'], format: int64 }
+        resolutionType: { type: [string, 'null'], enum: [MANUAL_MATCH, SPLIT, null] }
+        resolutionReason: { type: [string, 'null'] }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        activity:
+          type: array
+          items: { $ref: '#/components/schemas/CaseActivity' }
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/CaseComment' }
+        assignments:
+          type: array
+          items: { $ref: '#/components/schemas/CaseAssignment' }
+        claims:
+          type: array
+          items: { $ref: '#/components/schemas/CaseClaim' }
+    CaseActivity:
+      type: object
+      properties:
+        ordinal: { type: integer }
+        type: { type: string, description: CREATED or ASSIGNED or COMMENT_ADDED or STATUS_CHANGED or MATCH_ATTEMPTED or MATCH_REJECTED or ESCALATED or RESOLVED }
+        actor: { type: string }
+        from: { type: [string, 'null'] }
+        to: { type: [string, 'null'] }
+        detail: { type: [string, 'null'] }
+        at: { type: string, format: date-time }
+    CaseComment:
+      type: object
+      properties:
+        ordinal: { type: integer }
+        author: { type: string }
+        body: { type: string }
+        at: { type: string, format: date-time }
+    CaseAssignment:
+      type: object
+      properties:
+        ordinal: { type: integer }
+        owner: { type: string }
+        team: { type: string }
+        assignedBy: { type: string }
+        reason: { type: [string, 'null'] }
+        at: { type: string, format: date-time }
+    CaseClaim:
+      type: object
+      description: One row of the append-only claim ledger that names this case.
+      properties:
+        seq: { type: integer, format: int64 }
+        action: { type: string, enum: [CLAIM, RELEASE] }
+        source: { type: string, enum: [RUN_MATCH, MANUAL_MATCH, SPLIT, UNMATCH] }
+        statementSeq: { type: [integer, 'null'], format: int64 }
+        ledgerSeq: { type: [integer, 'null'], format: int64 }
+        actor: { type: string }
+    AssignRequest:
+      type: object
+      required: [expectedVersion, owner]
+      properties:
+        expectedVersion: { type: integer, format: int64 }
+        owner: { type: string, minLength: 1 }
+        reason: { type: string }
+    InvestigateRequest:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64 }
+    EscalateRequest:
+      type: object
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, format: int64 }
+        reason: { type: string, minLength: 1 }
+    CommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1 }
+    CommentCreated:
+      type: object
+      properties:
+        caseId: { type: integer, format: int64 }
+        ordinal: { type: integer }
+    MatchRequest:
+      type: object
+      required: [expectedVersion, reason, statementSeqs, ledgerSeqs]
+      properties:
+        expectedVersion: { type: integer, format: int64 }
+        reason: { type: string, minLength: 1 }
+        statementSeqs:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { type: integer, format: int64 }
+        ledgerSeqs:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { type: integer, format: int64 }
+    UnmatchRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
     IngestionResult:
       type: object
       required: [ingestionId, acceptedCount, rejectedCount, duplicate, ignoredElements]
