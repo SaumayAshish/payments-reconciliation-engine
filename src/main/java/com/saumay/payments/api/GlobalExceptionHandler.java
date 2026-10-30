@@ -1,5 +1,7 @@
 package com.saumay.payments.api;
 
+import com.saumay.payments.application.CaseErrorCode;
+import com.saumay.payments.application.CaseRejectedException;
 import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
@@ -41,6 +43,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return respond(ex.status(), ex.code(), ex.getMessage(), List.of(), request);
     }
 
+    @ExceptionHandler(CaseRejectedException.class)
+    public ResponseEntity<Object> handleCaseRejected(CaseRejectedException ex, WebRequest request) {
+        return respond(statusFor(ex.code()), ex.code().name(), ex.getMessage(), List.of(), request);
+    }
+
+    /** 404 unknown case; 409 the world changed under the caller; 400 malformed; 422 well-formed but can never work. */
+    static HttpStatus statusFor(CaseErrorCode code) {
+        return switch (code) {
+            case CASE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case CASE_VERSION_CONFLICT, ILLEGAL_STATE_TRANSITION, CASE_OWNER_REQUIRED, MATCH_LINE_ALREADY_CLAIMED,
+                    NOTHING_TO_UNMATCH -> HttpStatus.CONFLICT;
+            case CASE_REQUEST_INVALID -> HttpStatus.BAD_REQUEST;
+            case MATCH_INVALID, MATCH_LINE_NOT_FOUND -> HttpStatus.UNPROCESSABLE_CONTENT;
+        };
+    }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleUnexpected(Exception ex, WebRequest request) {
         LOG.error("Unhandled exception, correlationId={}", correlationId(request), ex);
