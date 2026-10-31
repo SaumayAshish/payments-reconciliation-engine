@@ -188,9 +188,9 @@ paths:
       x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
       parameters:
         - { name: status, in: query, required: false, schema: { type: string, enum: [OPEN, ASSIGNED, INVESTIGATING, RESOLVED, ESCALATED] } }
-        - { name: team, in: query, required: false, schema: { type: string } }
-        - { name: priority, in: query, required: false, schema: { type: string } }
-        - { name: kind, in: query, required: false, schema: { type: string } }
+        - { name: team, in: query, required: false, schema: { type: string, enum: [FX_TEAM, SENIOR_ANALYST, LEDGER_OPERATIONS, BANK_OPERATIONS, RECON_ANALYSTS, TEAM_LEAD] } }
+        - { name: priority, in: query, required: false, schema: { type: string, enum: [P1, P2, P3, P4] } }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [MISSING_LEDGER, MISSING_STATEMENT, AMOUNT_MISMATCH, CURRENCY_MISMATCH, DUPLICATE_SUSPECT, LOW_CONFIDENCE, AMBIGUOUS_TIE] } }
         - { name: owner, in: query, required: false, schema: { type: string } }
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
@@ -464,12 +464,12 @@ components:
       properties:
         id: { type: integer, format: int64 }
         kind: { type: string, enum: [MISSING_LEDGER, MISSING_STATEMENT, AMOUNT_MISMATCH, CURRENCY_MISMATCH, DUPLICATE_SUSPECT, LOW_CONFIDENCE, AMBIGUOUS_TIE] }
-        caseClass: { type: string, description: BREAK or REVIEW }
+        caseClass: { type: string, enum: [BREAK, REVIEW], description: BREAK has no candidate pair; REVIEW needs a person to confirm one }
         amountMinor: { type: integer, format: int64, description: Amount in minor units of the currency }
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         status: { type: string, enum: [OPEN, ASSIGNED, INVESTIGATING, RESOLVED, ESCALATED] }
-        priority: { type: string, description: Priority assigned by the routing rules }
-        team: { type: string, description: Team assigned by the routing rules }
+        priority: { type: string, enum: [P1, P2, P3, P4], description: Priority assigned by the routing rules }
+        team: { type: string, enum: [FX_TEAM, SENIOR_ANALYST, LEDGER_OPERATIONS, BANK_OPERATIONS, RECON_ANALYSTS, TEAM_LEAD], description: Team assigned by the routing rules }
         routingRule: { type: string, description: The routing rule that chose the team and priority }
         owner: { type: [string, 'null'] }
         createdBusinessDate: { type: string, format: date }
@@ -513,7 +513,7 @@ components:
       type: object
       properties:
         ordinal: { type: integer }
-        type: { type: string, description: CREATED or ASSIGNED or COMMENT_ADDED or STATUS_CHANGED or MATCH_ATTEMPTED or MATCH_REJECTED or ESCALATED or RESOLVED }
+        type: { type: string, enum: [CREATED, ASSIGNED, COMMENT_ADDED, STATUS_CHANGED, MATCH_ATTEMPTED, MATCH_REJECTED, ESCALATED, APPROVAL_REQUESTED, APPROVAL_APPROVED, APPROVAL_REJECTED, RESOLVED] }
         actor: { type: string }
         from: { type: [string, 'null'] }
         to: { type: [string, 'null'] }
@@ -531,7 +531,7 @@ components:
       properties:
         ordinal: { type: integer }
         owner: { type: string }
-        team: { type: string }
+        team: { type: string, enum: [FX_TEAM, SENIOR_ANALYST, LEDGER_OPERATIONS, BANK_OPERATIONS, RECON_ANALYSTS, TEAM_LEAD] }
         assignedBy: { type: string }
         reason: { type: [string, 'null'] }
         at: { type: string, format: date-time }
