@@ -221,11 +221,12 @@ Not every concept deserves a table. The rule: persist what must survive a restar
 | StatementLine, LedgerEntry | Yes, `statement_line`, `ledger_entry` | Immutable inputs. Separate tables because their lifecycles and indexes differ, same canonical columns |
 | RejectedLine | Yes | Data-quality observability (never silently dropped) |
 | ReconciliationRun | Yes | First-class, carries cut-off, config version, output hash |
-| Match, MatchCandidate | `match` yes; candidates **no** in general | Candidates are persisted only for review and break cases (top 3), as JSON inside the exception case. Persisting all candidates for 1M lines would be waste |
-| ExceptionCase | Yes | The working object |
-| ExceptionAssignment | Yes, append-only | Original owner must stay on record |
-| ExceptionComment | Yes | Activity timeline |
-| ExceptionAttachment | Metadata only | v1 stores name, size, hash and a pointer, not file bytes |
+| Match, MatchCandidate | Run matches yes (`run_match`, `run_match_line`, V3); manual matches as `line_claim` rows; candidates are **not** copied into cases | A case reads its candidates from the run's `run_exception_line` (role `CANDIDATE`) instead of duplicating them; showing them in the case view is deferred |
+| ExceptionCase | Yes, `exception_case` (V4) | The working object: mutable, optimistic `version`, guarded by a trigger that also holds identity, amount and SLA columns immutable |
+| ExceptionAssignment | Yes, `case_assignment`, append-only (V4) | Original owner must stay on record |
+| ExceptionComment | Yes, `case_comment` and the timeline `case_activity`, both append-only (V4) | Activity timeline; interim record until the audit chain exists (Phase 5) |
+| ExceptionAttachment | Metadata only, `case_attachment` (V4) | Table and immutability trigger built; no endpoint writes to it yet |
+| Match claim | Yes, `line_claim` (V5 to V7) | Append-only ledger of `CLAIM` and `RELEASE` rows; one active claim per line, enforced by a trigger (ADR-0009). Replaces the proposed persistent `match` state |
 | ApprovalRequest / ApprovalDecision | Yes, one table | A request has at most one decision; two tables would only add a join. Decision columns are nullable until decided |
 | AuditEvent | Yes, append-only | The evidence |
 | MatchingConfiguration (ReconciliationRule, thresholds) | Yes, versioned rows | Each change is a new immutable version, audited |
@@ -256,11 +257,18 @@ erDiagram
     STATEMENT_LINE ||--o{ RUN_EXCEPTION_LINE : "in"
     LEDGER_ENTRY ||--o{ RUN_EXCEPTION_LINE : "in"
     LEDGER_ENTRY ||--o{ RUN_CARRIED_FORWARD : "in"
-    RUN_EXCEPTION ||--o| EXCEPTION_CASE : "case opened from (planned, Phase 4)"
-    EXCEPTION_CASE ||--o{ EXCEPTION_ASSIGNMENT : history
-    EXCEPTION_CASE ||--o{ EXCEPTION_COMMENT : timeline
-    EXCEPTION_CASE ||--o{ EXCEPTION_ATTACHMENT : metadata
-    EXCEPTION_CASE ||--o{ APPROVAL_REQUEST : needs
+    RUN_EXCEPTION ||--o| EXCEPTION_CASE : "case opened from"
+    EXCEPTION_CASE |o--o{ EXCEPTION_CASE : "unmatch case links back"
+    EXCEPTION_CASE ||--o{ CASE_ACTIVITY : timeline
+    EXCEPTION_CASE ||--o{ CASE_ASSIGNMENT : history
+    EXCEPTION_CASE ||--o{ CASE_COMMENT : comments
+    EXCEPTION_CASE ||--o{ CASE_ATTACHMENT : metadata
+    STATEMENT_LINE ||--o{ LINE_CLAIM : claimed
+    LEDGER_ENTRY ||--o{ LINE_CLAIM : claimed
+    RUN_MATCH ||--o{ LINE_CLAIM : "run match claims"
+    EXCEPTION_CASE ||--o{ LINE_CLAIM : "manual, split, unmatch"
+    LINE_CLAIM |o--o| LINE_CLAIM : "released by"
+    EXCEPTION_CASE ||--o{ APPROVAL_REQUEST : "needs (planned, Phase 5)"
     AUDIT_EVENT }o--|| EXCEPTION_CASE : "entity ref (no FK)"
 
     INGESTION_FILE {
@@ -298,6 +306,7 @@ erDiagram
         date business_date
         text status "CREATED, RUNNING, COMPLETED, FAILED"
         bigint ledger_cutoff_seq
+        bigint claim_cutoff_seq "V5, fixed at creation, keeps replay deterministic"
         int auto_threshold_milli "plus six more configuration snapshot columns"
         char64 output_hash "set when COMPLETED"
         text failure_reason "set when FAILED"
@@ -348,13 +357,78 @@ erDiagram
     }
     EXCEPTION_CASE {
         bigint id PK
-        text kind "REVIEW or BREAK"
-        text type
-        text state
+        text origin "RUN or UNMATCH"
+        bigint origin_run_id FK "with origin_ordinal, the run exception"
+        int origin_ordinal FK
+        bigint linked_case_id FK "unmatch case to the earlier case, optional"
+        text natural_key "UNIQUE where origin is RUN"
+        text kind
+        text case_class "BREAK or REVIEW"
+        bigint amount_minor
+        char3 currency
+        text status "OPEN, ASSIGNED, INVESTIGATING, RESOLVED, ESCALATED"
+        text priority "P1 to P4"
         text team
-        text priority
+        text routing_rule
+        text owner "null while OPEN"
         date created_business_date
-        bigint version "optimistic lock"
+        int sla_business_days
+        date due_business_date
+        text resolution_type "MANUAL_MATCH or SPLIT"
+        text resolution_reason
+        timestamptz resolved_at
+        bigint version "optimistic lock, +1 per update"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    CASE_ACTIVITY {
+        bigint case_id PK, FK
+        int ordinal PK
+        text activity_type
+        text actor
+        text from_status
+        text to_status
+        text detail
+        timestamptz occurred_at
+    }
+    CASE_ASSIGNMENT {
+        bigint case_id PK, FK
+        int ordinal PK
+        text owner
+        text team
+        text assigned_by
+        text reason
+        timestamptz assigned_at
+    }
+    CASE_COMMENT {
+        bigint case_id PK, FK
+        int ordinal PK
+        text author
+        text body
+        timestamptz created_at
+    }
+    CASE_ATTACHMENT {
+        bigint case_id PK, FK
+        int ordinal PK
+        text file_name
+        text content_type
+        bigint size_bytes
+        char64 sha256
+        text added_by
+        timestamptz added_at
+    }
+    LINE_CLAIM {
+        bigint seq PK
+        text action "CLAIM or RELEASE"
+        bigint statement_seq FK "exactly one of the two"
+        bigint ledger_seq FK "exactly one of the two"
+        text source "RUN_MATCH, MANUAL_MATCH, SPLIT, UNMATCH"
+        bigint run_id FK "RUN_MATCH only"
+        int run_match_ordinal FK "RUN_MATCH only"
+        bigint case_id FK "manual, split, unmatch"
+        bigint releases_seq FK "RELEASE only"
+        text actor
+        timestamptz created_at
     }
     APPROVAL_REQUEST {
         bigint id PK
@@ -379,7 +453,7 @@ erDiagram
     }
 ```
 
-Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating point reaches a comparison against a threshold. The run tables (`RECONCILIATION_RUN` and the `RUN_` tables) are built in migration V3 and are append-only. `EXCEPTION_CASE` and the approval, comment, attachment, assignment and audit tables are still the Phase 0 proposal for Phases 4 and 5; a persistent `MATCH` with a `CONFIRMED` or `REVERSED` state arrives with manual matching and unmatch in Phase 4.
+Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating point reaches a comparison against a threshold. The run tables (`RECONCILIATION_RUN` and the `RUN_` tables) are built in migration V3 and are append-only. The case tables are built in V4 (`EXCEPTION_CASE` is mutable workflow, version-guarded and trigger-protected; its four child tables are append-only) and the claim ledger `LINE_CLAIM` in V5 to V7 (ADR-0009). A manual match, split or unmatch is therefore a set of claim rows plus the resolution fields on the case, not a persistent `MATCH` with a `CONFIRMED` or `REVERSED` state as first proposed. `APPROVAL_REQUEST` and `AUDIT_EVENT` are still the Phase 0 proposal for Phase 5.
 
 ### 7.1 Key indexes and why
 
@@ -390,21 +464,25 @@ Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating 
 | `(account, currency, amount_minor, value_date)` on `ledger_entry` | Tier 1 and 2 candidate lookup |
 | `(account, currency, amount_minor)` on `ledger_entry` | Tier 3 and 4 candidate pools |
 | `(seq)` ordered scan with `seq <= cutoff` | Replay cut-off (Q-07) |
-| `(state, team, priority)` partial index where `state <> 'RESOLVED'` on `exception_case` | The working queue |
-| `(created_business_date)` on `exception_case` | Ageing |
-| `UNIQUE (line_key, kind)` on `exception_case` | No duplicate exceptions on re-run (AC-06.3) |
+| `ix_case_open_queue (team, priority, due_business_date, id)` where `status <> 'RESOLVED'` on `exception_case` | The working queue: open cases by team, then priority, then who is due first (built, V4) |
+| `(created_business_date)` on `exception_case` | Ageing report. **Not built yet:** arrives with the reports in Phase 6, once the real query exists to tune against |
+| `uq_case_run_natural_key` unique on `natural_key` where `origin = 'RUN'` on `exception_case` | One case per exception however many times intake runs or later runs raise the same break (AC-06.3, built, V4) |
 | `(entity_type, entity_id, seq)` on `audit_event` | Per-entity history view |
 | `UNIQUE (seq)` and a trigger rejecting `UPDATE` and `DELETE` on `audit_event` | Append-only (AC-09.6) |
-| Partial unique index on `match_ledger_entry (ledger_seq)` where match state is `CONFIRMED` | A candidate has at most one active match (AC-05.4), enforced by the database, not only the code |
+| Trigger `guard_line_claim` on `line_claim`, plus a per-line advisory lock hashed into 1,024 buckets | A line has at most one active claim (AC-05.4), enforced by the database, not only the code (built, V5 and V6; ADR-0009) |
 | `ix_reconciliation_run (business_date, id)` | Find the runs for a business date (built, V3) |
 | `UNIQUE (run_id, natural_key)` on `run_exception` | One exception per kind and first subject line in a run (AC-06.3, built, V3) |
 | Partial indexes on `statement_seq` and `ledger_seq` of `run_match_line` and `run_exception_line` | Reverse lookup: which run decided about this line (built, V3). The primary keys already serve "everything in run X" |
+| `ix_case_owner (owner)` where `owner IS NOT NULL` on `exception_case` | "My cases" lookup (built, V4) |
+| `ix_case_origin (origin_run_id, origin_ordinal)` on `exception_case` | From a run exception to its case (built, V4) |
+| `uq_claim_release (releases_seq)` where not null on `line_claim` | A claim can be released once (built, V5) |
+| `ix_claim_statement`, `ix_claim_ledger` (partial, on the line seq), `ix_claim_case (case_id)`, `ix_claim_run_match (run_id, run_match_ordinal)` on `line_claim` | Find the active claim for a line, and everything a case or a run match holds (built, V5) |
 
 ### 7.2 Transactions and concurrency
 
 - Ingestion: one transaction per file, advisory lock on the hash, and a shared lock on the run cut-off so a run never reads a half-committed ingestion.
 - Run: `create` takes the exclusive ledger cut-off lock, reads the highest ledger sequence, writes the `CREATED` run and commits before matching starts, so every sequence at or below the cut-off is committed (ADR-0003 amendment). A run that fails is marked `FAILED` with a generic reason; the cause stays in the server log.
-- Cases: optimistic locking via `version`; conflicts return `CONCURRENT_MODIFICATION`.
+- Cases: optimistic locking. Every update is `UPDATE ... WHERE id = ? AND version = ?`; a stale version returns `CASE_VERSION_CONFLICT` (409), and the `guard_exception_case` trigger refuses any update that does not raise `version` by exactly 1. The case row is locked `FOR UPDATE` while a timeline ordinal is taken. Claim writers take the shared run cut-off advisory lock and the per-line bucket lock, so matching and manual matching serialise on a line, not on the table (ADR-0009).
 - Audit append: serialised with a transaction-scoped advisory lock so the chain stays linear.
 - Isolation: `READ COMMITTED` plus the constraints above. Revisit only if a test shows an anomaly.
 
