@@ -12,6 +12,7 @@ Each ADR records one decision: context, decision, alternatives rejected, consequ
 | [0006](0006-tier4-candidate-bound.md) | Tier 4 candidate bound stays at 8 | Accepted | FR-04, FR-05, NFR-02 |
 | [0007](0007-exception-case-model.md) | Exception cases are mutable workflow beside append-only run results | Accepted | FR-06, FR-07, FR-12 |
 | [0008](0008-routing-and-sla.md) | Routing rules and SLA are pure functions over configuration; SLA status is derived | Accepted | FR-06, FR-11 |
+| [0009](0009-claim-ledger.md) | Claim ledger for matched lines | Accepted | FR-05, FR-07, FR-10, FR-12 |
 
 Planned (written when the decision is actually made, not before): configuration versioning, interim actor identity (Q-13), authentication approach (Phase 8), event schema format (Phase 7).
 

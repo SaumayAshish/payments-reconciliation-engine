@@ -1,6 +1,6 @@
 # API
 
-Status: **Endpoint catalogue (Phase 0).** The authoritative contract will be an OpenAPI 3.1 file, written **before** each endpoint group is implemented (`docs/api/openapi.yaml`, started in Phase 1 with ingestion). This catalogue fixes names, roles and idempotency behaviour so the specs and tests agree.
+Status: **Endpoint catalogue, updated as endpoints ship.** The exception endpoints (Phase 4) are implemented and specified in `openapi.yaml`, which is the authoritative contract; this table fixes names, roles and idempotency behaviour. Roles shown are the ones Phase 8 will enforce.
 
 ## Conventions
 
@@ -15,7 +15,7 @@ Status: **Endpoint catalogue (Phase 0).** The authoritative contract will be an 
   ```
   No stack traces, SQL, hostnames or secrets, ever.
 - Roles: `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR`. Enforced server-side from Phase 8; an interim `ActorContext` supplies identity before then (Q-13).
-- Optimistic concurrency on cases via `version` in the body or `If-Match`; conflicts return `409 CONCURRENT_MODIFICATION`.
+- Optimistic concurrency on cases: every write names the `expectedVersion` it last read; a stale version returns `409 CASE_VERSION_CONFLICT` and changes nothing. Until Phase 8 writes also carry an `X-Actor` header (`400 ACTOR_REQUIRED` when missing).
 
 ## Catalogue
 
@@ -29,16 +29,17 @@ Status: **Endpoint catalogue (Phase 0).** The authoritative contract will be an 
 | `GET /reconciliations/runs/{id}` | Run status, counts, output hash | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 10 | 3 |
 | `GET /reconciliations/runs/{id}/results` | Paged matches and exceptions | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 04, 05 | 3 |
 | `POST /reconciliations/runs/{id}/replay` | Recompute and compare output hash | `ADMIN`, `AUDITOR` | Safe (read-only) | 10 | 3 |
-| `GET /exceptions` | Queue, filter by team, state, type, priority, ageing | `ANALYST`, `TEAM_LEAD`, `CONTROLLER` | Safe | 06, 11 | 4 |
-| `GET /exceptions/{id}` | Case detail, candidates, timeline | `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR` | Safe | 06 | 4 |
-| `POST /exceptions/{id}/assign` | Assign owner | `TEAM_LEAD` | Same owner is a no-op | 07 | 4 |
-| `POST /exceptions/{id}/start` | `ASSIGNED` to `INVESTIGATING` | `ANALYST` (owner) | State-guarded | 07 | 4 |
-| `POST /exceptions/{id}/comments` | Add note | `ANALYST`, `TEAM_LEAD` | Client request id | 07 | 4 |
-| `POST /exceptions/{id}/escalate` | Escalate with reason | `ANALYST`, `TEAM_LEAD` | State-guarded | 07 | 4 |
-| `POST /exceptions/{id}/match` | Manual match | `ANALYST` | State-guarded | 12 | 4 |
-| `POST /exceptions/{id}/split` | Split into components | `ANALYST` | State-guarded | 12 | 4 |
-| `POST /exceptions/{id}/unmatch` | Reverse a confirmed match, create linked case | `ANALYST`, `TEAM_LEAD` | State-guarded | 12 | 4 |
-| `POST /exceptions/{id}/resolve` | Resolve; submits an approval if controlled | `ANALYST` | State-guarded | 07, 08 | 4 to 5 |
+| `POST /reconciliations/runs/{id}/exceptions` | Open a case for every exception of a completed run | `ADMIN`, `TEAM_LEAD` | Safe to repeat: one case per natural key, repeat creates none | 06 | 4 (done; Phase 7 replaces it with an event consumer) |
+| `POST /reconciliations/runs/{runId}/matches/{ordinal}/unmatch` | Reverse an auto-confirmed run match, open a review case | `ADMIN`, `TEAM_LEAD` | `409 NOTHING_TO_UNMATCH` when already reversed | 12 | 4 (done) |
+| `GET /exceptions` | Queue; filter by status, team, priority, kind, owner; keyset paging (`after`, `limit` up to 500) | `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR` | Safe | 06 | 4 (done) |
+| `GET /exceptions/{id}` | Case detail: timeline, comments, assignments, claim rows, one consistent snapshot (candidate matches deferred) | `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR` | Safe | 06 | 4 (done) |
+| `POST /exceptions/{id}/assign` | Assign or reassign an owner | `ADMIN`, `TEAM_LEAD` | Version-guarded | 07 | 4 (done) |
+| `POST /exceptions/{id}/investigate` | `ASSIGNED` to `INVESTIGATING` (needs an owner) | `ADMIN`, `ANALYST`, `TEAM_LEAD` | Version-guarded | 07 | 4 (done) |
+| `POST /exceptions/{id}/comments` | Add a note; appears on the timeline | `ADMIN`, `ANALYST`, `TEAM_LEAD` | Append-only | 07 | 4 (done) |
+| `POST /exceptions/{id}/escalate` | `INVESTIGATING` to `ESCALATED`, reason mandatory | `ADMIN`, `TEAM_LEAD` | Version-guarded | 07 | 4 (done) |
+| `POST /exceptions/{id}/match` | Resolve by manual match (1:1) or split (1:n or n:1, up to 8 a side, sums equal) | `ADMIN`, `ANALYST`, `TEAM_LEAD` | Version-guarded; claimed line returns `409` | 12 | 4 (done) |
+| `POST /exceptions/{id}/unmatch` | Reverse a manual match or split, open a linked review case | `ADMIN`, `TEAM_LEAD` | A second unmatch returns `409 NOTHING_TO_UNMATCH` | 12 | 4 (done) |
+| `POST /exceptions/{id}/resolve` | Write-off or adjustment resolution; submits an approval | `ANALYST` | State-guarded | 07, 08 | 5 |
 | `POST /approvals/{id}/approve` | Approve (checker must differ from maker) | `CONTROLLER` | Decided once | 08 | 5 |
 | `POST /approvals/{id}/reject` | Reject with reason | `CONTROLLER` | Decided once | 08 | 5 |
 | `GET /approvals` | Pending approvals queue | `CONTROLLER` | Safe | 08 | 5 |
@@ -52,6 +53,6 @@ Status: **Endpoint catalogue (Phase 0).** The authoritative contract will be an 
 
 ## Notes
 
-- The exception endpoint names follow the master prompt. `start` and `comments` are added because the state machine and timeline need them.
+- The exception endpoints follow the master prompt with three deliberate changes: `start` is `investigate`; there is no separate `split` (a one-to-many `match` is a split); and there is no `resolve` until Phase 5, because in Phase 4 a case resolves only through a match or split, and write-off or adjustment needs maker-checker.
 - `POST /ingestions/*` returns `201` for a new ingestion and `200` with `duplicate: true` for repeated bytes (Q-11, decided). The body is the raw file; see [openapi.yaml](openapi.yaml) for content types, error codes and examples.
 - A CLI command (`audit verify`) is provided alongside the endpoint so verification does not depend on the HTTP layer.

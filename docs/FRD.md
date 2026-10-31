@@ -181,6 +181,26 @@ Run API error codes (all use the common error body):
 | `INVALID_RESULT_VIEW` | 400 | `view` is not `matches`, `exceptions`, `carried-forward` or `notes` |
 | `INVALID_PAGE_PARAMETER` | 400 | `after` below 0, or `limit` outside 1 to 500 |
 | `MALFORMED_REQUEST` | 400 | The request body is not valid JSON |
+
+### 4.8 Exception case records and error codes (Phase 4)
+
+Migration V4 adds the mutable workflow tables: `exception_case` (one row per case, optimistic `version`, guarded by a trigger) and the append-only `case_activity`, `case_assignment`, `case_comment` and `case_attachment` (attachment metadata only). V5 adds the append-only `line_claim` ledger (`CLAIM` and `RELEASE` rows, at most one active claim per line, enforced by a trigger) and a `claim_cutoff_seq` on the run so replay stays deterministic; V6 hashes the per-line lock into 1,024 buckets; V7 lets an `UNMATCH` case exist without a linked case. A case's origin is `RUN` (it must name its run and ordinal and has no linked case) or `UNMATCH` (it names no run). The API uses camel-case names; money is minor units plus a currency code.
+
+Case API error codes (all use the common error body):
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `CASE_NOT_FOUND` | 404 | No case with that id |
+| `CASE_VERSION_CONFLICT` | 409 | `expectedVersion` is stale; read the case again |
+| `ILLEGAL_STATE_TRANSITION` | 409 | The move is not one of the 8 legal transitions |
+| `CASE_OWNER_REQUIRED` | 409 | The action needs an owner and the case has none |
+| `MATCH_LINE_ALREADY_CLAIMED` | 409 | A named line is actively claimed by another match |
+| `NOTHING_TO_UNMATCH` | 409 | The match was already reversed or never existed |
+| `CASE_REQUEST_INVALID` | 400 | A case request field is missing or invalid |
+| `MATCH_INVALID` | 422 | The match breaks a manual match rule (sides, size, currency, totals) |
+| `MATCH_LINE_NOT_FOUND` | 422 | A named statement line or ledger entry does not exist |
+| `ACTOR_REQUIRED` | 400 | A write without the `X-Actor` header (interim until Phase 8) |
+| `INVALID_FILTER` | 400 | A queue filter value is not valid |
 ## 5. Functional requirements
 
 ### FRD-01 Idempotent statement ingestion (FR-01, Must)
@@ -308,6 +328,8 @@ SLA clock (Q-10): P1 1, P2 2, P3 5, P4 10 business days; at risk at 75 percent c
 
 Edge cases: **EC-06.1** high-value threshold missing for a currency (default used, warning logged); **EC-06.2** exceptions created in a run that later fails (run is transactional, so none persist).
 
+**Phase 4 as built.** Cases are opened by a separate, repeatable step after the run, `POST /api/v1/reconciliations/runs/{id}/exceptions`, so the run's result records stay untouched (ADR-0007). The step is idempotent: a partial unique index on the natural key (`uq_case_run_natural_key`) allows one case per exception, a repeat or a later run raising the same break creates nothing, and the original case keeps its age. Each case stores its class (`BREAK` or `REVIEW`), team, priority, the routing rule that chose them, its SLA in business days and its due business date, all computed by `RoutingRules` and `SlaPolicy` from the standard configuration (versioned, audited configuration arrives in Phase 5). Until the Phase 7 event consumer exists, the explicit call is the only trigger.
+
 ### FRD-07 Exception state machine (FR-07, Must)
 
 States: `OPEN`, `ASSIGNED`, `INVESTIGATING`, `RESOLVED`, `ESCALATED`. `RESOLVED` is terminal (Q-08).
@@ -334,6 +356,8 @@ Everything else is illegal. While a controlled action awaits approval the case s
 | AC-07.5 | **Given** the transition table, **then** a test enumerates all 25 ordered state pairs and asserts exactly the 8 legal ones succeed. |
 
 Edge cases: **EC-07.1** transition by a user lacking the role (rejected, FRD-08 and Phase 8); **EC-07.2** system-driven escalation raced by a manual one (idempotent, second becomes a no-op with a conflict-free outcome).
+
+**Phase 4 as built.** `CaseStatus` holds the 8 legal transitions; the database trigger `guard_exception_case` repeats the rule and requires `version` to rise by exactly 1, so a writer that bypasses the application still cannot make an illegal move. Writes are version-guarded (`UPDATE ... WHERE id = ? AND version = ?`); a stale `expectedVersion` returns `409 CASE_VERSION_CONFLICT` and changes nothing. A case row lock serialises timeline ordinals. Reassignments are kept in `case_assignment`, comments in `case_comment` and the timeline in `case_activity`; all three are append-only. **Deviation:** `case_activity` is the interim record of who did what. The hash-chained audit events of AC-07.1 arrive with FRD-09 in Phase 5. System-driven escalation on SLA breach (EC-07.2) arrives with the SLA job in Phase 6. Until Phase 8 each write names its actor in an `X-Actor` header.
 
 ### FRD-08 Maker-checker (FR-08, Must)
 
@@ -402,6 +426,8 @@ Reports (Phase 6): match report, tier report, ageing report, SLA report, team wo
 | AC-12.3 | **Given** a confirmed match, **when** a user unmatches it, **then** a reversal row is written (the original match is never deleted), both sides return to the pool, and a **new** linked exception is created (Q-08). |
 | AC-12.4 | **Given** an unmatched pair, **when** re-matched, **then** the new match follows the same claim rules (a candidate has at most one active match). |
 | AC-12.5 | **Given** a manual match above the high-value threshold that needs an adjustment to balance, **then** the adjustment follows FRD-08. |
+
+**Phase 4 as built.** `POST /exceptions/{id}/match` resolves an `INVESTIGATING` case. The rules (`ManualMatchRules`, pure): both sides non-empty; at most 8 lines a side; one side is exactly one line (one against one is a `MANUAL_MATCH`, one against several is a `SPLIT`; many against many is refused); no repeated line; one currency; statement total equals ledger total exactly. A match is recorded in the append-only claim ledger `line_claim` (ADR-0009) with source `MANUAL_MATCH` or `SPLIT`, and on the case as `resolutionType` and `resolutionReason`. **Deviation from AC-12.1:** no `run_match` row is written, because run results are immutable evidence and replay must keep reproducing the stored hash; the claim rows carry the match instead. A line already claimed by another match or case returns `409 MATCH_LINE_ALREADY_CLAIMED` and nothing is written, including when two analysts race for the same line. Unmatch (`POST /exceptions/{id}/unmatch`, or `POST /reconciliations/runs/{runId}/matches/{ordinal}/unmatch` for an auto-confirmed run match) writes `RELEASE` rows, never deletes, leaves the original case `RESOLVED` with a `MATCH_REJECTED` activity, and opens a new `OPEN` review case of kind `LOW_CONFIDENCE` with origin `UNMATCH`. That case is linked to the original, except when a run match is unmatched, where no case exists to link (migration V7). A second unmatch returns `409 NOTHING_TO_UNMATCH`. **Deviations:** in Phase 4 a case resolves only by match or split, so there is no `/resolve` endpoint; write-off and adjustment (AC-12.5) need maker-checker and arrive in Phase 5. Validation refusals are not yet written to the timeline as `MATCH_REJECTED`.
 
 ### FRD-13 Kafka event publication (FR-13, Could, Phase 7)
 

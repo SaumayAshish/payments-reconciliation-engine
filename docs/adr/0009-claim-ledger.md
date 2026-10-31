@@ -75,3 +75,7 @@ exactly what it saw the first time, even though later matches and unmatches have
 "A line can be matched once. I enforce that with an append-only claim ledger and a trigger, not a flag, so history is
 never rewritten and the rule holds even if an application bug skips it. Each run records how much of the ledger it
 could see, which is what keeps replay deterministic after later matches and unmatches."
+
+## Amendment 2026-10-30 (migration V7)
+
+Unmatching an auto-confirmed run match has no case to link to, because auto-confirmed matches never had one. The original constraint required every `UNMATCH` case to link to a case, so that unmatch could not be recorded. Migration V7 relaxes `ck_case_origin`: a `RUN` case still names its run and ordinal and has no linked case; an `UNMATCH` case names no run, and its linked case is optional. The claim ledger itself is unchanged: the unmatch still writes `RELEASE` rows, nothing is deleted, and the run's stored result and hash stay valid for replay.
