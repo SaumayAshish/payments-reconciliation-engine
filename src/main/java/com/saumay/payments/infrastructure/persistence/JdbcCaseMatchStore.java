@@ -135,7 +135,7 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
         }
     }
 
-    private ResolveOutcome resolveInTransaction(Resolution r, Instant at) {
+    ResolveOutcome resolveInTransaction(Resolution r, Instant at) {
         OffsetDateTime now = OffsetDateTime.ofInstant(at, ZoneOffset.UTC);
         int updated = jdbc.update(RESOLVE_CASE, r.type().name(), r.reason(), now, now, r.caseId(), r.expectedVersion());
         if (updated == 0) {
@@ -160,7 +160,7 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
 
     @Override
     public Optional<ActiveMatch> findActiveMatchOfCase(long caseId) {
-        return active("c.case_id = ?", caseId, caseId);
+        return active("c.case_id = ? AND c.source IN ('MANUAL_MATCH', 'SPLIT')", caseId, caseId);
     }
 
     @Override
