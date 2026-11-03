@@ -210,7 +210,7 @@ class CaseSchemaIT {
         assertRejected(CHECK_VIOLATION, null,
                 () -> insertCaseRow("r-1", "MISSING_LEDGER", "BREAK", "RESOLVED", null, "MANUAL_MATCH", null));
         assertRejected(CHECK_VIOLATION, null,
-                () -> insertCaseRow("r-2", "MISSING_LEDGER", "BREAK", "RESOLVED", null, "WRITE_OFF", "not yet allowed"));
+                () -> insertCaseRow("r-2", "MISSING_LEDGER", "BREAK", "RESOLVED", null, "BOGUS", "not a resolution type"));
         assertRejected(CHECK_VIOLATION, null,
                 () -> insertCaseRow("r-3", "MISSING_LEDGER", "BREAK", "OPEN", null, "SPLIT", "too early"));
     }

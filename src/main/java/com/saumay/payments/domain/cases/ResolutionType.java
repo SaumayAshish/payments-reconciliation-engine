@@ -1,7 +1,9 @@
 package com.saumay.payments.domain.cases;
 
-/** How a case was resolved. Adjustment and write-off join in Phase 5 with maker-checker. */
+/** How a case was resolved. Write-off and adjustment are controlled actions (FRD-08). */
 public enum ResolutionType {
     MANUAL_MATCH,
-    SPLIT
+    SPLIT,
+    WRITE_OFF,
+    ADJUSTMENT
 }
