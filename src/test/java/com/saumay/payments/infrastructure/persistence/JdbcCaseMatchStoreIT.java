@@ -75,9 +75,9 @@ class JdbcCaseMatchStoreIT {
         dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         ingestion = new JdbcIngestionStore(dataSource);
-        runService = new ReconciliationRunService(new JdbcRunStore(dataSource), Clock.systemUTC());
-        intake = new CaseIntakeService(new JdbcCaseIntakeStore(dataSource, Clock.systemUTC()), RoutingConfig.defaults());
-        matches = new CaseMatchService(new JdbcCaseMatchStore(dataSource), RoutingConfig.defaults(), Clock.systemUTC());
+        runService = new ReconciliationRunService(new JdbcRunStore(dataSource, new JdbcAuditLog(dataSource)), Clock.systemUTC());
+        intake = new CaseIntakeService(new JdbcCaseIntakeStore(dataSource, Clock.systemUTC(), new JdbcAuditLog(dataSource)), RoutingConfig.defaults());
+        matches = new CaseMatchService(new JdbcCaseMatchStore(dataSource, new JdbcAuditLog(dataSource)), RoutingConfig.defaults(), Clock.systemUTC());
     }
 
     @BeforeEach

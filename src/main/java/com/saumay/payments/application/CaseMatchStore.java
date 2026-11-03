@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.function.LongFunction;
 
 /**
  * Persistence port for resolving a case with a manual match or split and for unmatching (ADR-0009). Resolving
@@ -57,11 +58,12 @@ public interface CaseMatchStore {
     }
 
     record Resolution(long caseId, long expectedVersion, ResolutionType type, String actor, String reason,
-            List<MatchLine> lines) {
+            List<MatchLine> lines, AuditNote audit) {
         public Resolution {
             Objects.requireNonNull(type, "type");
             Objects.requireNonNull(actor, "actor");
             Objects.requireNonNull(reason, "reason");
+            Objects.requireNonNull(audit, "audit");
             lines = List.copyOf(lines);
         }
     }
@@ -80,7 +82,7 @@ public interface CaseMatchStore {
     }
 
     record NewUnmatchCase(String naturalKey, long amountMinor, String currency, CasePriority priority, CaseTeam team,
-            String routingRule, LocalDate createdBusinessDate, int slaBusinessDays, LocalDate dueBusinessDate) {
+            String routingRule, LocalDate createdBusinessDate, int slaBusinessDays, LocalDate dueBusinessDate, LongFunction<AuditNote> audit) {
         public NewUnmatchCase {
             Objects.requireNonNull(naturalKey, "naturalKey");
             Objects.requireNonNull(currency, "currency");
@@ -89,6 +91,7 @@ public interface CaseMatchStore {
             Objects.requireNonNull(routingRule, "routingRule");
             Objects.requireNonNull(createdBusinessDate, "createdBusinessDate");
             Objects.requireNonNull(dueBusinessDate, "dueBusinessDate");
+            Objects.requireNonNull(audit, "audit");
         }
     }
 }

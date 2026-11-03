@@ -1,6 +1,10 @@
 package com.saumay.payments.infrastructure.persistence;
 
+import com.saumay.payments.application.AuditLog;
+import com.saumay.payments.application.AuditNote;
 import com.saumay.payments.application.CaseMatchStore;
+import com.saumay.payments.domain.audit.AuditDraft;
+import com.saumay.payments.domain.audit.AuditTime;
 import com.saumay.payments.domain.cases.CaseStatus;
 import com.saumay.payments.domain.cases.MatchLine;
 import com.saumay.payments.domain.cases.MatchLine.Side;
@@ -78,8 +82,10 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
+    private final AuditLog audit;
 
-    public JdbcCaseMatchStore(DataSource dataSource) {
+    public JdbcCaseMatchStore(DataSource dataSource, AuditLog audit) {
+        this.audit = Objects.requireNonNull(audit, "audit");
         this.jdbc = new JdbcTemplate(dataSource);
         this.transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
     }
@@ -147,6 +153,8 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
         }
         jdbc.update(INSERT_RESOLVED_ACTIVITY, r.caseId(), nextOrdinal(r.caseId()), r.actor(),
                 r.type() + " of " + described + ": " + r.reason(), now);
+        audit.append(new AuditDraft("exception_case", String.valueOf(r.caseId()), r.actor(),
+                r.audit().action(), r.audit().beforeState(), r.audit().afterState(), AuditTime.micros(at)));
         return ResolveOutcome.RESOLVED;
     }
 
@@ -204,6 +212,10 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
             jdbc.update(INSERT_REJECTED_ACTIVITY, match.linkedCaseId(), nextOrdinal(match.linkedCaseId()), actor,
                     "Match reversed and reopened as case " + newCaseId + ": " + reason, now);
         }
+        AuditNote note = nc.audit().apply(newCaseId);
+        long entity = match.linkedCaseId() != null ? match.linkedCaseId() : newCaseId;
+        audit.append(new AuditDraft("exception_case", String.valueOf(entity), actor, note.action(),
+                note.beforeState(), note.afterState(), AuditTime.micros(at)));
         return OptionalLong.of(newCaseId);
     }
 

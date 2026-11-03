@@ -62,7 +62,7 @@ class JdbcRunResultReaderIT {
                 new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         ingestion = new JdbcIngestionStore(dataSource);
-        runs = new JdbcRunStore(dataSource);
+        runs = new JdbcRunStore(dataSource, new JdbcAuditLog(dataSource));
         reader = new JdbcRunResultReader(dataSource);
         service = new ReconciliationRunService(runs, Clock.systemUTC());
     }

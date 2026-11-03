@@ -88,7 +88,9 @@ public final class CaseMatchService {
 
         List<MatchLine> all = new ArrayList<>(statements);
         all.addAll(ledger);
-        switch (store.resolve(new Resolution(caseId, expectedVersion, type, by, why, all), clock.instant())) {
+        Resolution resolution = new Resolution(caseId, expectedVersion, type, by, why, all,
+                CaseAudit.resolved(caseId, current.status(), current.version(), type, why, all));
+        switch (store.resolve(resolution, clock.instant())) {
             case RESOLVED -> {
             }
             case VERSION_CONFLICT -> throw conflict(caseId);
@@ -134,7 +136,7 @@ public final class CaseMatchService {
         long firstClaim = match.lines().stream().mapToLong(ClaimedLine::claimSeq).min().orElseThrow();
         NewUnmatchCase newCase = new NewUnmatchCase("UNMATCH:" + firstClaim, amount, currency,
                 plan.routing().priority(), plan.routing().team(), plan.routing().ruleName(), created,
-                plan.slaBusinessDays(), plan.dueBusinessDate());
+                plan.slaBusinessDays(), plan.dueBusinessDate(), CaseAudit.reversed(match, reason));
         return store.unmatch(match, newCase, actor, reason, clock.instant())
                 .orElseThrow(CaseMatchService::nothingToUnmatch);
     }

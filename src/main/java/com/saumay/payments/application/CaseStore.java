@@ -26,13 +26,15 @@ public interface CaseStore {
 
     /** The new state of a case plus the history rows that explain it. */
     record CaseChange(long caseId, long expectedVersion, CaseStatus status, String owner, CaseTeam team,
-            CasePriority priority, String routingRule, Activity activity, Assignment assignment) {
+            CasePriority priority, String routingRule, Activity activity, Assignment assignment,
+            AuditNote audit) {
         public CaseChange {
             Objects.requireNonNull(status, "status");
             Objects.requireNonNull(team, "team");
             Objects.requireNonNull(priority, "priority");
             Objects.requireNonNull(routingRule, "routingRule");
             Objects.requireNonNull(activity, "activity");
+            Objects.requireNonNull(audit, "audit");
         }
     }
 

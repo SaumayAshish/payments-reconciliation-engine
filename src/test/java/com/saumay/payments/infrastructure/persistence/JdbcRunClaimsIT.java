@@ -60,7 +60,7 @@ class JdbcRunClaimsIT {
         dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         ingestion = new JdbcIngestionStore(dataSource);
-        runs = new JdbcRunStore(dataSource);
+        runs = new JdbcRunStore(dataSource, new JdbcAuditLog(dataSource));
         runService = new ReconciliationRunService(runs, Clock.systemUTC());
     }
 
@@ -119,7 +119,7 @@ class JdbcRunClaimsIT {
     void linesBecomeAvailableAgainOnceTheirClaimsAreReleased() {
         long statements = aScenario();
         RunHeader first = start(statements);
-        new CaseIntakeService(new JdbcCaseIntakeStore(dataSource, Clock.systemUTC()), RoutingConfig.defaults())
+        new CaseIntakeService(new JdbcCaseIntakeStore(dataSource, Clock.systemUTC(), new JdbcAuditLog(dataSource)), RoutingConfig.defaults())
                 .openCases(first.id());
         long caseId = jdbc.queryForObject("SELECT min(id) FROM exception_case", Long.class);
         jdbc.update("INSERT INTO line_claim (action, statement_seq, ledger_seq, source, case_id, actor, releases_seq)"

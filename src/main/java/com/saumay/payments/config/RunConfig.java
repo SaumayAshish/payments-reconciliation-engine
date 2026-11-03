@@ -1,5 +1,6 @@
 package com.saumay.payments.config;
 
+import com.saumay.payments.application.AuditLog;
 import com.saumay.payments.application.ReconciliationRunService;
 import com.saumay.payments.application.RunResultReader;
 import com.saumay.payments.application.RunStore;
@@ -15,8 +16,8 @@ import org.springframework.context.annotation.Configuration;
 public class RunConfig {
 
     @Bean
-    RunStore runStore(DataSource dataSource) {
-        return new JdbcRunStore(dataSource);
+    RunStore runStore(DataSource dataSource, AuditLog audit) {
+        return new JdbcRunStore(dataSource, audit);
     }
 
     @Bean

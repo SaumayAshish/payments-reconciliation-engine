@@ -1,5 +1,6 @@
 package com.saumay.payments.config;
 
+import com.saumay.payments.application.AuditLog;
 import com.saumay.payments.application.CaseMatchService;
 import com.saumay.payments.application.CaseMatchStore;
 import com.saumay.payments.domain.cases.RoutingConfig;
@@ -14,8 +15,8 @@ import org.springframework.context.annotation.Configuration;
 public class CaseMatchConfig {
 
     @Bean
-    CaseMatchStore caseMatchStore(DataSource dataSource) {
-        return new JdbcCaseMatchStore(dataSource);
+    CaseMatchStore caseMatchStore(DataSource dataSource, AuditLog audit) {
+        return new JdbcCaseMatchStore(dataSource, audit);
     }
 
     @Bean

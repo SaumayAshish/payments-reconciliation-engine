@@ -71,9 +71,9 @@ class JdbcCaseIntakeStoreIT {
         dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         ingestion = new JdbcIngestionStore(dataSource);
-        runs = new JdbcRunStore(dataSource);
+        runs = new JdbcRunStore(dataSource, new JdbcAuditLog(dataSource));
         runService = new ReconciliationRunService(runs, Clock.systemUTC());
-        intakeStore = new JdbcCaseIntakeStore(dataSource, Clock.fixed(NOW, ZoneOffset.UTC));
+        intakeStore = new JdbcCaseIntakeStore(dataSource, Clock.fixed(NOW, ZoneOffset.UTC), new JdbcAuditLog(dataSource));
     }
 
     @BeforeEach

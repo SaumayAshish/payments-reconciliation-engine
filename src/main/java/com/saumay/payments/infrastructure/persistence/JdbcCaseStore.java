@@ -1,7 +1,11 @@
 package com.saumay.payments.infrastructure.persistence;
 
+import com.saumay.payments.application.AuditLog;
+import com.saumay.payments.application.AuditNote;
 import com.saumay.payments.application.CaseRecord;
 import com.saumay.payments.application.CaseStore;
+import com.saumay.payments.domain.audit.AuditDraft;
+import com.saumay.payments.domain.audit.AuditTime;
 import com.saumay.payments.domain.cases.CaseClass;
 import com.saumay.payments.domain.cases.CaseKind;
 import com.saumay.payments.domain.cases.CasePriority;
@@ -52,8 +56,10 @@ public final class JdbcCaseStore implements CaseStore {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
+    private final AuditLog audit;
 
-    public JdbcCaseStore(DataSource dataSource) {
+    public JdbcCaseStore(DataSource dataSource, AuditLog audit) {
+        this.audit = Objects.requireNonNull(audit, "audit");
         this.jdbc = new JdbcTemplate(dataSource);
         this.transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
     }
@@ -91,6 +97,9 @@ public final class JdbcCaseStore implements CaseStore {
             jdbc.update(INSERT_ASSIGNMENT, change.caseId(), next(NEXT_ASSIGNMENT, change.caseId()),
                     assignment.owner(), assignment.team().name(), assignment.assignedBy(), assignment.reason(), when);
         }
+        AuditNote note = change.audit();
+        audit.append(new AuditDraft("exception_case", String.valueOf(change.caseId()), activity.actor(),
+                note.action(), note.beforeState(), note.afterState(), AuditTime.micros(at)));
         return true;
     }
 

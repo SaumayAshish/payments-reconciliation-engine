@@ -1,0 +1,17 @@
+package com.saumay.payments.config;
+
+import com.saumay.payments.application.AuditLog;
+import com.saumay.payments.infrastructure.persistence.JdbcAuditLog;
+import javax.sql.DataSource;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/** Wires the audit chain. Every store that changes audited state receives this one log. */
+@Configuration
+public class AuditConfig {
+
+    @Bean
+    AuditLog auditLog(DataSource dataSource) {
+        return new JdbcAuditLog(dataSource);
+    }
+}

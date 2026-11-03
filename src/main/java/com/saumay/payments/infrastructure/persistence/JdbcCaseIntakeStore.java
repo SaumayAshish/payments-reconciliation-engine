@@ -1,12 +1,20 @@
 package com.saumay.payments.infrastructure.persistence;
 
+import com.saumay.payments.application.AuditLog;
 import com.saumay.payments.application.CaseIntakeStore;
+import com.saumay.payments.domain.audit.AuditDraft;
+import com.saumay.payments.domain.audit.AuditTime;
+import com.saumay.payments.domain.audit.CanonicalJson;
+import com.saumay.payments.domain.model.ContentHash;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -47,8 +55,10 @@ public final class JdbcCaseIntakeStore implements CaseIntakeStore {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
     private final Clock clock;
+    private final AuditLog audit;
 
-    public JdbcCaseIntakeStore(DataSource dataSource, Clock clock) {
+    public JdbcCaseIntakeStore(DataSource dataSource, Clock clock, AuditLog audit) {
+        this.audit = Objects.requireNonNull(audit, "audit");
         this.jdbc = new JdbcTemplate(dataSource);
         this.transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -76,6 +86,7 @@ public final class JdbcCaseIntakeStore implements CaseIntakeStore {
     private int insertInTransaction(List<NewCase> cases) {
         OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
         List<Object[]> activities = new ArrayList<>();
+        List<Long> createdIds = new ArrayList<>();
         for (NewCase c : cases) {
             List<Long> ids = jdbc.queryForList(INSERT_CASE, Long.class,
                     c.runId(), c.ordinal(), c.naturalKey(), c.kind().name(), c.caseClass().name(),
@@ -85,12 +96,38 @@ public final class JdbcCaseIntakeStore implements CaseIntakeStore {
                 String detail = "Opened from run " + c.runId() + " exception " + c.ordinal()
                         + " by rule " + c.routing().ruleName();
                 activities.add(new Object[] {ids.get(0), SYSTEM_ACTOR, detail, now});
+                createdIds.add(ids.get(0));
             }
         }
         if (!activities.isEmpty()) {
             jdbc.batchUpdate(INSERT_ACTIVITY, activities);
         }
+        if (!createdIds.isEmpty()) {
+            appendCasesOpened(cases.get(0).runId(), createdIds, now);
+        }
         return activities.size();
+    }
+
+    /**
+     * One event per intake call that created something: how many cases, and a SHA-256 over their sorted ids so the
+     * exact set is pinned without listing it (ADR-0010). A call that created nothing records nothing.
+     */
+    private void appendCasesOpened(long runId, List<Long> createdIds, OffsetDateTime now) {
+        List<Long> sorted = new ArrayList<>(createdIds);
+        Collections.sort(sorted);
+        StringBuilder joined = new StringBuilder();
+        for (Long id : sorted) {
+            if (joined.length() > 0) {
+                joined.append(',');
+            }
+            joined.append(id);
+        }
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("runId", runId);
+        after.put("created", (long) sorted.size());
+        after.put("createdIdsSha256", ContentHash.ofUtf8(joined.toString()).hex());
+        audit.append(new AuditDraft("reconciliation_run", String.valueOf(runId), SYSTEM_ACTOR, "CASES_OPENED",
+                CanonicalJson.write(Map.of()), CanonicalJson.write(after), AuditTime.micros(now.toInstant())));
     }
 
     private record RunRow(String status, LocalDate businessDate) {

@@ -6,6 +6,7 @@ import com.saumay.payments.application.RunInputs;
 import com.saumay.payments.application.RunRejectedException;
 import com.saumay.payments.application.RunRequest;
 import com.saumay.payments.application.RunStatus;
+import com.saumay.payments.application.AuditLog;
 import com.saumay.payments.application.RunStore;
 import com.saumay.payments.domain.model.CanonicalLine;
 import com.saumay.payments.domain.model.LineKey;
@@ -119,8 +120,10 @@ public final class JdbcRunStore implements RunStore {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
+    private final AuditLog audit;
 
-    public JdbcRunStore(DataSource dataSource) {
+    public JdbcRunStore(DataSource dataSource, AuditLog audit) {
+        this.audit = Objects.requireNonNull(audit, "audit");
         this.jdbc = new JdbcTemplate(dataSource);
         this.transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
     }
@@ -281,6 +284,8 @@ public final class JdbcRunStore implements RunStore {
             claimAutoConfirmedLines(runId);
             writeExceptions(runId, result);
             writeCarriedAndNotes(runId, result);
+            audit.append(RunAudit.completed(runId, result, Objects.requireNonNull(
+                    jdbc.queryForObject("SELECT now()", java.sql.Timestamp.class)).toInstant()));
         });
     }
 

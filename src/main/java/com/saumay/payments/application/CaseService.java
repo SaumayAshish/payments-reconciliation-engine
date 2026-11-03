@@ -62,7 +62,9 @@ public final class CaseService {
         }
         Assignment assignment = new Assignment(newOwner, current.team(), by, why);
         return commit(current, new CaseChange(caseId, expectedVersion, status, newOwner, current.team(),
-                current.priority(), current.routingRule(), activity, assignment));
+                current.priority(), current.routingRule(), activity, assignment,
+                CaseAudit.note("CASE_ASSIGNED", current, status, newOwner, current.team(), current.priority(),
+                        current.routingRule())));
     }
 
     /** ASSIGNED or ESCALATED to INVESTIGATING. The case must have an owner. */
@@ -77,7 +79,9 @@ public final class CaseService {
         Activity activity = new Activity(CaseActivityType.STATUS_CHANGED, by, current.status(),
                 CaseStatus.INVESTIGATING, "Investigation started");
         return commit(current, new CaseChange(caseId, expectedVersion, CaseStatus.INVESTIGATING, current.owner(),
-                current.team(), current.priority(), current.routingRule(), activity, null));
+                current.team(), current.priority(), current.routingRule(), activity, null,
+                CaseAudit.note("CASE_INVESTIGATION_STARTED", current, CaseStatus.INVESTIGATING, current.owner(),
+                        current.team(), current.priority(), current.routingRule())));
     }
 
     /**
@@ -102,7 +106,9 @@ public final class CaseService {
         Activity activity = new Activity(CaseActivityType.ESCALATED, by, current.status(), CaseStatus.ESCALATED,
                 detail);
         return commit(current, new CaseChange(caseId, expectedVersion, CaseStatus.ESCALATED, current.owner(),
-                CaseTeam.TEAM_LEAD, current.priority().raisedOneLevel(), rule, activity, null));
+                CaseTeam.TEAM_LEAD, current.priority().raisedOneLevel(), rule, activity, null,
+                CaseAudit.note("CASE_ESCALATED", current, CaseStatus.ESCALATED, current.owner(), CaseTeam.TEAM_LEAD,
+                        current.priority().raisedOneLevel(), rule)));
     }
 
     /** Adds a comment. Allowed on any case, resolved ones included; it never changes the case itself. */

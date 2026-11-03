@@ -1,5 +1,6 @@
 package com.saumay.payments.config;
 
+import com.saumay.payments.application.AuditLog;
 import com.saumay.payments.application.CaseIntakeService;
 import com.saumay.payments.application.CaseIntakeStore;
 import com.saumay.payments.application.CaseService;
@@ -25,8 +26,8 @@ public class CaseConfig {
     }
 
     @Bean
-    CaseIntakeStore caseIntakeStore(DataSource dataSource, Clock clock) {
-        return new JdbcCaseIntakeStore(dataSource, clock);
+    CaseIntakeStore caseIntakeStore(DataSource dataSource, Clock clock, AuditLog audit) {
+        return new JdbcCaseIntakeStore(dataSource, clock, audit);
     }
 
     @Bean
@@ -35,8 +36,8 @@ public class CaseConfig {
     }
 
     @Bean
-    CaseStore caseStore(DataSource dataSource) {
-        return new JdbcCaseStore(dataSource);
+    CaseStore caseStore(DataSource dataSource, AuditLog audit) {
+        return new JdbcCaseStore(dataSource, audit);
     }
 
     @Bean

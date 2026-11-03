@@ -74,7 +74,7 @@ class JdbcCaseStoreIT {
         DriverManagerDataSource dataSource =
                 new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
-        service = new CaseService(new JdbcCaseStore(dataSource), Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new CaseService(new JdbcCaseStore(dataSource, new JdbcAuditLog(dataSource)), Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @BeforeEach
