@@ -3,6 +3,7 @@ package com.saumay.payments.infrastructure.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.saumay.payments.application.CaseErrorCode;
 import com.saumay.payments.application.CaseIntakeService;
@@ -12,6 +13,7 @@ import com.saumay.payments.application.CaseRejectedException;
 import com.saumay.payments.application.ReconciliationRunService;
 import com.saumay.payments.application.RunHeader;
 import com.saumay.payments.application.RunRequest;
+import com.saumay.payments.domain.audit.AuditVerification;
 import com.saumay.payments.domain.cases.CaseStatus;
 import com.saumay.payments.domain.cases.RoutingConfig;
 import com.saumay.payments.domain.model.ContentHash;
@@ -86,6 +88,9 @@ class JdbcCaseMatchStoreIT {
                 + " exception_case, run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
                 + " run_match, reconciliation_run_statement_batch, reconciliation_run, rejected_line,"
                 + " statement_line, ledger_entry, ingestion_file RESTART IDENTITY CASCADE");
+        jdbc.execute("ALTER TABLE audit_event DISABLE TRIGGER USER");
+        jdbc.execute("TRUNCATE audit_event");
+        jdbc.execute("ALTER TABLE audit_event ENABLE TRIGGER USER");
     }
 
     @Test
@@ -114,6 +119,77 @@ class JdbcCaseMatchStoreIT {
 
         assertEquals("SPLIT", text("SELECT resolution_type FROM exception_case WHERE id = " + caseA));
         assertEquals(3, count("line_claim WHERE case_id = " + caseA + " AND source = 'SPLIT'"));
+    }
+
+    @Test
+    void aManualMatchIsRecordedInTheAuditChainWithItsBeforeAndAfterState() {
+        aScenario();
+        long caseA = investigating("ONLY-A");
+
+        matches.resolve(caseA, 2, "alice", "Same payer",
+                List.of(statementSeq("ONLY-A")), List.of(ledgerSeq("LATE-1")));
+
+        String cond = "audit_event WHERE entity_type = 'exception_case' AND entity_id = '" + caseA
+                + "' AND action = 'CASE_RESOLVED' AND actor = 'alice'";
+        assertEquals(1, count(cond));
+        String before = text("SELECT before_state FROM " + cond);
+        String after = text("SELECT after_state FROM " + cond);
+        assertTrue(before.contains("\"status\":\"INVESTIGATING\"") && before.contains("\"version\":2"), before);
+        assertTrue(after.contains("\"status\":\"RESOLVED\"") && after.contains("\"resolutionType\":\"MANUAL_MATCH\"")
+                && after.contains("\"version\":3"), after);
+        assertTrue(new JdbcAuditLog(dataSource).verify() instanceof AuditVerification.Ok);
+    }
+
+    @Test
+    void aRefusedMatchLeavesNoAuditEvent() {
+        aScenario();
+        long caseA = investigating("ONLY-A");
+        long caseB = investigating("ONLY-B");
+        matches.resolve(caseA, 2, "alice", "first", List.of(statementSeq("ONLY-A")), List.of(ledgerSeq("LATE-1")));
+
+        assertCode(CaseErrorCode.MATCH_LINE_ALREADY_CLAIMED, () -> matches.resolve(caseB, 2, "bob", "second",
+                List.of(statementSeq("ONLY-B")), List.of(ledgerSeq("LATE-1"))));
+        assertCode(CaseErrorCode.CASE_VERSION_CONFLICT, () -> matches.resolve(caseB, 1, "bob", "stale",
+                List.of(statementSeq("ONLY-B")), List.of(ledgerSeq("LATE-2"))));
+
+        assertEquals(1, count("audit_event WHERE action = 'CASE_RESOLVED'"));
+    }
+
+    @Test
+    void reversingAMatchIsRecordedAgainstTheResolvedCase() {
+        aScenario();
+        long caseA = investigating("ONLY-A");
+        matches.resolve(caseA, 2, "alice", "first", List.of(statementSeq("ONLY-A")), List.of(ledgerSeq("LATE-1")));
+
+        long reopened = matches.unmatchCase(caseA, "bob", "Wrong payer");
+
+        String cond = "audit_event WHERE entity_type = 'exception_case' AND entity_id = '" + caseA
+                + "' AND action = 'CASE_MATCH_REVERSED' AND actor = 'bob'";
+        assertEquals(1, count(cond));
+        assertTrue(text("SELECT before_state FROM " + cond).contains("\"linkedCaseId\":" + caseA));
+        String after = text("SELECT after_state FROM " + cond);
+        assertTrue(after.contains("\"reopenedAs\":" + reopened) && after.contains("Wrong payer"), after);
+    }
+
+    @Test
+    void theRunAndItsCasesAreRecordedOnceEvenWhenIntakeIsRepeated() {
+        aScenario();
+        investigating("ONLY-A");
+        long runId = Objects.requireNonNull(
+                jdbc.queryForObject("SELECT id FROM reconciliation_run ORDER BY id LIMIT 1", Long.class));
+
+        intake.openCases(runId);
+
+        assertEquals(1, count("audit_event WHERE action = 'RUN_COMPLETED' AND entity_id = '" + runId + "'"));
+        assertEquals(1, count("audit_event WHERE action = 'CASES_OPENED' AND entity_id = '" + runId + "'"));
+        List<Long> ids = jdbc.queryForList("SELECT id FROM exception_case ORDER BY id", Long.class);
+        String joined = String.join(",", ids.stream().map(String::valueOf).toList());
+        String opened = text("SELECT after_state FROM audit_event WHERE action = 'CASES_OPENED'");
+        assertTrue(opened.contains("\"created\":" + ids.size()), opened);
+        assertTrue(opened.contains("\"createdIdsSha256\":\"" + ContentHash.ofUtf8(joined).hex() + "\""), opened);
+        String completed = text("SELECT after_state FROM audit_event WHERE action = 'RUN_COMPLETED'");
+        String outputHash = text("SELECT output_hash FROM reconciliation_run WHERE id = " + runId);
+        assertTrue(completed.contains("\"outputHash\":\"" + outputHash + "\""), completed);
     }
 
     @Test
