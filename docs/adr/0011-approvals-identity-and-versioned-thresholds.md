@@ -1,6 +1,6 @@
 # ADR-0011: Approvals, write-off and adjustment, interim identity, versioned thresholds
 
-- Status: **Proposed**
+- Status: **Accepted** (2026-11-03)
 - Date: 2026-11-01
 - Related: FR-08, FRD-08, FR-09, FR-12 (AC-12.5), Q-09, Q-13, ADR-0007, ADR-0009, ADR-0010
 

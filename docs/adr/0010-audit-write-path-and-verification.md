@@ -1,6 +1,6 @@
 # ADR-0010: Audit write path, scope and verification (extends ADR-0004)
 
-- Status: **Proposed**
+- Status: **Accepted** (2026-11-03)
 - Date: 2026-11-01
 - Related: FR-09, FRD-09, FR-12, NFR-06, ADR-0004, ADR-0007, ADR-0009
 

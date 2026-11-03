@@ -13,8 +13,8 @@ Each ADR records one decision: context, decision, alternatives rejected, consequ
 | [0007](0007-exception-case-model.md) | Exception cases are mutable workflow beside append-only run results | Accepted | FR-06, FR-07, FR-12 |
 | [0008](0008-routing-and-sla.md) | Routing rules and SLA are pure functions over configuration; SLA status is derived | Accepted | FR-06, FR-11 |
 | [0009](0009-claim-ledger.md) | Claim ledger for matched lines | Accepted | FR-05, FR-07, FR-10, FR-12 |
-| [0010](0010-audit-write-path-and-verification.md) | Audit events are written in the action's transaction, with explicit sequence numbers, text-canonical states and the chain lock taken last | Proposed | FR-09, FR-12, NFR-06 |
-| [0011](0011-approvals-identity-and-versioned-thresholds.md) | Approvals for write-off and adjustment, a dev-only identity registry, and versioned approval thresholds | Proposed | FR-08, FR-09, FR-12 |
+| [0010](0010-audit-write-path-and-verification.md) | Audit events are written in the action's transaction, with explicit sequence numbers, text-canonical states and the chain lock taken last | Accepted | FR-09, FR-12, NFR-06 |
+| [0011](0011-approvals-identity-and-versioned-thresholds.md) | Approvals for write-off and adjustment, a dev-only identity registry, and versioned approval thresholds | Accepted | FR-08, FR-09, FR-12 |
 
 Planned (written when the decision is actually made, not before): authentication approach (Phase 8), event schema format (Phase 7).
 
