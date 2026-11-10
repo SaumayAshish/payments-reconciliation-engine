@@ -3,11 +3,192 @@ info:
   title: Payments Reconciliation and Exceptions Platform API
   version: 0.4.0
   description: >
-    Ingestion (Phase 2), reconciliation run (Phase 3) and exception management (Phase 4) endpoints. Authentication and role enforcement arrive in Phase 8; until then the roles
-    shown in x-required-roles are documented intent, not enforced. All data is synthetic.
+    Ingestion, reconciliation, exception management, approval and audit endpoints.
+    Phase 5 approval, configuration and audit endpoints use ActorContext and enforce
+    their declared roles. Older endpoints retain their earlier identity behavior;
+    full authentication and authorization are planned for Phase 8. All data is synthetic.
 servers:
   - url: http://localhost:8080
 paths:
+  /api/v1/audit/verify:
+    get:
+      summary: Verify the audit chain
+      description: >
+        Walks the stored chain and returns OK with its verified head, or FAILED
+        with the first bad sequence and reason. This does not detect deletion
+        of the tail without comparison to an independently recorded head.
+        Phase 5 enforces the listed roles through the actor context.
+      x-required-roles: [AUDITOR, ADMIN]
+      parameters:
+        - name: X-Actor
+          in: header
+          required: true
+          schema: { type: string }
+        - name: expectedSeq
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 0 }
+          description: Supply together with expectedHash.
+        - name: expectedHash
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+          description: Supply together with expectedSeq.
+      responses:
+        '200':
+          description: Verification result, including whether the chain is intact
+          content:
+            application/json:
+              schema:
+                type: object
+                description: OK includes count, headSeq and headHash; FAILED includes firstBadSeq, reason and verifiedCount.
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/audit/{entityType}/{entityId}:
+    get:
+      summary: Read audit events for an entity
+      description: >
+        Returns events in ascending sequence order. To continue, pass the last
+        returned sequence as afterSeq. An unknown entity returns an empty list.
+        Phase 5 enforces the listed roles through the actor context.
+      x-required-roles: [AUDITOR, ADMIN]
+      parameters:
+        - { name: entityType, in: path, required: true, schema: { type: string } }
+        - { name: entityId, in: path, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: afterSeq, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        '200':
+          description: The requested page of audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { type: object }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/configuration:
+    put:
+      summary: Replace approval thresholds with a new configuration version
+      description: >
+        Appends a complete currency-to-threshold map. Amounts are non-negative
+        minor units. Currencies omitted from the map use the default of 1000000.
+        Only an ADMIN may update configuration.
+      x-required-roles: [ADMIN]
+      parameters:
+        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [perCurrencyMinor]
+              properties:
+                perCurrencyMinor:
+                  type: object
+                  additionalProperties: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200':
+          description: The newly stored configuration snapshot
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/exceptions/{id}/resolve:
+    post:
+      summary: Request a write-off or adjustment
+      description: >
+        At or below the configured threshold, resolves immediately. Above it,
+        creates a pending approval and leaves the case investigating.
+      x-required-roles: [ANALYST, TEAM_LEAD, CONTROLLER]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, action, reason]
+              properties:
+                expectedVersion: { type: integer, format: int64 }
+                action: { type: string, enum: [WRITE_OFF, ADJUSTMENT] }
+                reason: { type: string }
+      responses:
+        '200': { description: Case resolved immediately }
+        '202': { description: Approval request created }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/approvals/{id}:
+    get:
+      summary: Read an approval request
+      x-required-roles: [ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR, ADMIN]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Approval request }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/approvals/{id}/approve:
+    post:
+      summary: Approve a pending controlled action
+      description: The checker must be a controller and must differ from the maker.
+      x-required-roles: [CONTROLLER]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200': { description: Approval decided and case resolved }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/approvals/{id}/reject:
+    post:
+      summary: Reject a pending controlled action
+      description: The checker must be a different controller and provide a note.
+      x-required-roles: [CONTROLLER]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string }
+      responses:
+        '200': { description: Approval rejected and case remains open }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /api/v1/ingestions/statements:
     post:
       summary: Upload a bank statement

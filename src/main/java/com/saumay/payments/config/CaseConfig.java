@@ -5,6 +5,7 @@ import com.saumay.payments.application.CaseIntakeService;
 import com.saumay.payments.application.CaseIntakeStore;
 import com.saumay.payments.application.CaseService;
 import com.saumay.payments.application.CaseStore;
+import com.saumay.payments.application.PendingApprovalGuard;
 import com.saumay.payments.domain.cases.RoutingConfig;
 import com.saumay.payments.infrastructure.persistence.JdbcCaseIntakeStore;
 import com.saumay.payments.infrastructure.persistence.JdbcCaseStore;
@@ -41,7 +42,7 @@ public class CaseConfig {
     }
 
     @Bean
-    CaseService caseService(CaseStore store, Clock clock) {
-        return new CaseService(store, clock);
+    CaseService caseService(CaseStore store, Clock clock, PendingApprovalGuard pending) {
+        return new CaseService(store, clock, pending);
     }
 }

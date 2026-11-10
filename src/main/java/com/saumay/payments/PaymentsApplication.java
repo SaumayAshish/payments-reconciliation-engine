@@ -7,6 +7,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class PaymentsApplication {
 
     public static void main(String[] args) {
+        if (AuditVerifyCommand.requested(args)) {
+            System.exit(AuditVerifyCommand.run(args));
+        }
         SpringApplication.run(PaymentsApplication.class, args);
     }
 }

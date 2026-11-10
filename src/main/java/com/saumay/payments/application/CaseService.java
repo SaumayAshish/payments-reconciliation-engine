@@ -26,10 +26,16 @@ public final class CaseService {
 
     private final CaseStore store;
     private final Clock clock;
+    private final PendingApprovalGuard pending;
 
     public CaseService(CaseStore store, Clock clock) {
+        this(store, clock, PendingApprovalGuard.none());
+    }
+
+    public CaseService(CaseStore store, Clock clock, PendingApprovalGuard pending) {
         this.store = Objects.requireNonNull(store, "store");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.pending = Objects.requireNonNull(pending, "pending");
     }
 
     public CaseRecord get(long caseId) {
@@ -99,6 +105,9 @@ public final class CaseService {
         }
         if (current.version() != expectedVersion) {
             throw conflict(caseId);
+        }
+        if (!system) {
+            pending.requireNone(caseId);
         }
         requireMove(current.status(), CaseStatus.ESCALATED);
         String rule = system ? RoutingRules.RULE_SLA_BREACH : RULE_MANUAL_ESCALATION;

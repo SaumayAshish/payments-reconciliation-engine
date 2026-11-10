@@ -82,6 +82,9 @@ public final class JdbcCaseStore implements CaseStore {
     }
 
     private boolean applyInTransaction(CaseChange change, Instant at) {
+        if ("manual-escalation".equals(change.routingRule())) {
+            PendingApprovalLock.requireNone(jdbc, change.caseId());
+        }
         OffsetDateTime when = OffsetDateTime.ofInstant(at, ZoneOffset.UTC);
         int updated = jdbc.update(UPDATE_CASE, change.status().name(), change.owner(), change.team().name(),
                 change.priority().name(), change.routingRule(), when, change.caseId(), change.expectedVersion());

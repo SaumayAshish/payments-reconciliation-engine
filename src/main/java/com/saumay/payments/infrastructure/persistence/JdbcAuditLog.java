@@ -8,7 +8,10 @@ import com.saumay.payments.domain.audit.AuditEvent;
 import com.saumay.payments.domain.audit.AuditHead;
 import com.saumay.payments.domain.audit.AuditVerification;
 import java.util.List;
+import java.util.Objects;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -20,6 +23,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  */
 public final class JdbcAuditLog implements AuditLog {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(JdbcAuditLog.class);
     private static final int DEFAULT_VERIFY_PAGE_SIZE = 1_000;
     private static final String LOCK_CHAIN = "SELECT pg_advisory_xact_lock(7002, 1)";
     private static final String HEAD = "SELECT seq, current_hash FROM audit_event ORDER BY seq DESC LIMIT 1";
@@ -69,7 +73,17 @@ public final class JdbcAuditLog implements AuditLog {
 
     @Override
     public AuditVerification verify() {
+        return verifyInternal(null);
+    }
+
+    @Override
+    public AuditVerification verify(AuditHead expected) {
+        return verifyInternal(Objects.requireNonNull(expected, "expected"));
+    }
+
+    private AuditVerification verifyInternal(AuditHead expected) {
         AuditChainChecker checker = new AuditChainChecker();
+        boolean anchorFound = expected == null || AuditChain.GENESIS.equals(expected);
         long after = 0;
         long verified = 0;
         while (true) {
@@ -89,11 +103,22 @@ public final class JdbcAuditLog implements AuditLog {
                 if (!checker.accept(event)) {
                     return checker.result();
                 }
+                if (expected != null && AuditChain.headOf(event).equals(expected)) {
+                    anchorFound = true;
+                }
                 verified++;
                 after = row.seq();
             }
             if (page.size() < verifyPageSize) {
-                return checker.result();
+                AuditVerification result = checker.result();
+                if (result instanceof AuditVerification.Ok ok) {
+                    if (!anchorFound) {
+                        return new AuditVerification.AnchorMismatch(
+                                expected, new AuditHead(ok.headSeq(), ok.headHash()));
+                    }
+                    LOGGER.info("audit.head seq={} hash={}", ok.headSeq(), ok.headHash());
+                }
+                return result;
             }
         }
     }

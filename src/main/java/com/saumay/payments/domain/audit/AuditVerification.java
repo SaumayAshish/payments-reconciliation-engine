@@ -1,7 +1,20 @@
 package com.saumay.payments.domain.audit;
 
 /** The outcome of walking the chain (ADR-0010 point 8): intact, or the first position where it is not. */
-public sealed interface AuditVerification permits AuditVerification.Ok, AuditVerification.Failed {
+public sealed interface AuditVerification
+        permits AuditVerification.Ok, AuditVerification.Failed, AuditVerification.AnchorMismatch {
+
+    /** The chain is intact, but the independently supplied anchor was not found. */
+    record AnchorMismatch(AuditHead expected, AuditHead actual) implements AuditVerification {
+        public AnchorMismatch {
+            java.util.Objects.requireNonNull(expected, "expected");
+            java.util.Objects.requireNonNull(actual, "actual");
+        }
+
+        public String reason() {
+            return "HEAD_MISMATCH";
+        }
+    }
 
     enum FailureReason {
         /** The event's stored hash is not the hash of its own content: the row was edited. */

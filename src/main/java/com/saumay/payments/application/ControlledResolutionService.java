@@ -37,16 +37,25 @@ public final class ControlledResolutionService {
 
     private final ApprovalStore approvals;
     private final CaseMatchStore cases;
-    private final ApprovalThreshold threshold;
-    private final long configVersion;
+    private final Supplier<ApprovalConfigurationStore.Snapshot> configuration;
     private final Clock clock;
 
     public ControlledResolutionService(ApprovalStore approvals, CaseMatchStore cases, ApprovalThreshold threshold,
             long configVersion, Clock clock) {
         this.approvals = Objects.requireNonNull(approvals, "approvals");
         this.cases = Objects.requireNonNull(cases, "cases");
-        this.threshold = Objects.requireNonNull(threshold, "threshold");
-        this.configVersion = configVersion;
+        ApprovalConfigurationStore.Snapshot fixed =
+                new ApprovalConfigurationStore.Snapshot(configVersion, threshold);
+        this.configuration = () -> fixed;
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    public ControlledResolutionService(ApprovalStore approvals, CaseMatchStore cases,
+            ApprovalConfigurationStore configuration, Clock clock) {
+        this.approvals = Objects.requireNonNull(approvals, "approvals");
+        this.cases = Objects.requireNonNull(cases, "cases");
+        ApprovalConfigurationStore source = Objects.requireNonNull(configuration, "configuration");
+        this.configuration = source::current;
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -72,7 +81,8 @@ public final class ControlledResolutionService {
         List<MatchLine> lines = subjectLines(caseId);
         Instant now = clock.instant();
 
-        if (!threshold.requiresApproval(facts.currency(), facts.amountMinor())) {
+        ApprovalConfigurationStore.Snapshot snapshot = configuration.get();
+        if (!snapshot.threshold().requiresApproval(facts.currency(), facts.amountMinor())) {
             Resolution resolution = new Resolution(caseId, expectedVersion, action.resolution(), by, why, lines,
                     CaseAudit.resolved(caseId, facts.status(), facts.version(), action.resolution(), why, lines));
             switch (cases.resolve(resolution, now)) {
@@ -85,7 +95,7 @@ public final class ControlledResolutionService {
         }
 
         ApprovalRequest request = ApprovalRequest.pending(caseId, action, facts.amountMinor(), facts.currency(), why,
-                by, now, configVersion);
+                by, now, snapshot.version());
         SubmitResult result = approvals.submit(
                 new Submission(request, expectedVersion, ApprovalAudit.requested(request)), now);
         switch (result.outcome()) {
@@ -133,6 +143,10 @@ public final class ControlledResolutionService {
             case ALREADY_DECIDED -> throw alreadyDecided();
             case VERSION_CONFLICT, LINE_ALREADY_CLAIMED -> throw new IllegalStateException("not possible for a rejection");
         }
+        return load(approvalId);
+    }
+
+    public ApprovalRequest get(long approvalId) {
         return load(approvalId);
     }
 

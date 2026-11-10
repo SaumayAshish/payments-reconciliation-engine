@@ -2,7 +2,8 @@
 
 A Java 25 service that ingests bank statements and ledger entries, auto-matches them with a deterministic four-tier engine, and routes everything else to an auditable exceptions queue with maker-checker approval, SLA tracking and a tamper-evident audit trail.
 
-> **Status: Phase 0 complete and approved; Phase 1 next.** No production code exists yet. Nothing below is claimed as working until its row in the status table says so and links evidence.
+> **Status: Phase 5 implementation is under gate review.** The phase gate report
+> records the verified test results, remaining limitations and approval status.
 
 ## Why this exists
 

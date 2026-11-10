@@ -42,12 +42,18 @@ public final class CaseMatchService {
     private final CaseMatchStore store;
     private final RoutingRules rules;
     private final Clock clock;
+    private final PendingApprovalGuard pending;
 
     public CaseMatchService(CaseMatchStore store, RoutingConfig config, Clock clock) {
+        this(store, config, clock, PendingApprovalGuard.none());
+    }
+
+    public CaseMatchService(CaseMatchStore store, RoutingConfig config, Clock clock, PendingApprovalGuard pending) {
         this.store = Objects.requireNonNull(store, "store");
         Objects.requireNonNull(config, "config");
         this.rules = new RoutingRules(config);
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.pending = Objects.requireNonNull(pending, "pending");
     }
 
     /**
@@ -65,6 +71,7 @@ public final class CaseMatchService {
             throw conflict(caseId);
         }
         requireResolvable(current.status());
+        pending.requireNone(caseId);
 
         List<MatchLine> found = store.loadLines(statementIds, ledgerIds);
         List<MatchLine> statements = sideOf(found, Side.STATEMENT);

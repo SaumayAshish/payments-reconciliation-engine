@@ -1,6 +1,6 @@
 # Functional Requirements Document (FRD)
 
-Status: **Approved 2026-10-07 (Phase 0 gate)** · Source: [BRD.md](BRD.md) · Companions: [architecture.md](architecture.md), [glossary.md](glossary.md), [synthetic-data-spec.md](synthetic-data-spec.md), [ADRs](adr/)
+Status: **Approved 2026-10-07 (Phase 0 gate)** Ã‚Â· Source: [BRD.md](BRD.md) Ã‚Â· Companions: [architecture.md](architecture.md), [glossary.md](glossary.md), [synthetic-data-spec.md](synthetic-data-spec.md), [ADRs](adr/)
 
 This document expands each BRD functional requirement (FR-xx) into a numbered functional requirement (FRD-xx) with Given/When/Then acceptance criteria (AC) and edge cases (EC). Every AC is written so it can become one automated test; IDs are stable so the [traceability matrix](traceability-matrix.md) can point at them.
 
@@ -262,7 +262,7 @@ A line leaves the pipeline at the first tier that confirms it. Every match store
 | 1 Exact | same account, `referenceNorm`, `amountMinor`, currency, `valueDate` | `1.00` |
 | 2 Tolerance | same account, amount, currency, `referenceNorm`; value dates differ and business-day distance `d` satisfies `0 <= d <= W` (default `W = 3`; `d = 0` when the dates differ only by a weekend, EC-04.6) | `0.99 - 0.09 * d / W`, integer arithmetic rounded half up (so `W=3`: 0.99, 0.96, 0.93, 0.90) |
 | 3 Fuzzy | same account, amount, currency; value date within `W`; similarity `sim >= 0.60` | `0.70 + (sim - 0.60) / 0.40 * 0.249`, so 0.70 to 0.949 (Q-03, Q-04) |
-| 4 One-to-many | subset of the 8 best eligible candidates (nearest value date, then canonical order) sums exactly to the other side’s amount; same account, currency and sign; every component smaller than the single line; value dates within W | 0.80 + 0.07*batchRef + 0.03*sameDate (range 0.80 to 0.90, so Tier 4 always lands in REVIEW and never auto-confirms; the tier ceiling 0.949 is a safety cap) |
+| 4 One-to-many | subset of the 8 best eligible candidates (nearest value date, then canonical order) sums exactly to the other sideÃ¢â‚¬â„¢s amount; same account, currency and sign; every component smaller than the single line; value dates within W | 0.80 + 0.07*batchRef + 0.03*sameDate (range 0.80 to 0.90, so Tier 4 always lands in REVIEW and never auto-confirms; the tier ceiling 0.949 is a safety cap) |
 *Batch reference*: every component's normalised reference equals the single line's. *Same date*: every component's value date equals the single line's. Both bonuses are constants (0.070 and 0.030) in `OneToManyTier`.
 
 `sim = 0.6 * tokenSetSimilarity(counterpartyNorm) + 0.4 * (1 - normalisedLevenshtein(narrative_a, narrative_b))`, where `tokenSetSimilarity` is Jaccard over normalised tokens. Weights and the `0.60` floor are configuration.  Similarity is computed in integer thousandths. Narratives are compared after upper-casing and reducing punctuation and runs of spaces. A side with no counterparty tokens, or two empty narratives, contributes 0 because there is no evidence. Dates may be equal or up to `W` business days apart. The formulas above are **proposed and will be tuned against the corpus in Phase 2**; any change is recorded as an ADR amendment before the gate.
@@ -374,6 +374,14 @@ Controlled actions: `WRITE_OFF` and `ADJUSTMENT` whose absolute amount is **stri
 
 Edge cases: **EC-08.1** threshold changed while a request is pending (the threshold in force at submission applies, stored on the request); **EC-08.2** maker reassigned or deactivated (request stays valid, any other controller may decide); **EC-08.3** amount exactly equal to threshold (no approval).
 
+**Phase 5 implementation:** `ControlledResolutionService` uses a versioned
+per-currency threshold snapshot. A pending approval records its configuration
+version; version 0 denotes the built-in defaults. The case is resolved only
+after a different controller approves. Pending requests block manual
+escalation, matching and another controlled resolution. The development actor
+registry is limited to the `dev` profile; other profiles fail closed for these
+controlled endpoints. Full authentication remains Phase 8.
+
 ### FRD-09 Append-only hash-chained audit (FR-09, Must)
 
 | AC | Given / When / Then |
@@ -387,6 +395,13 @@ Edge cases: **EC-08.1** threshold changed while a request is pending (the thresh
 | AC-09.7 | **Given** two concurrent appends, **then** the chain stays linear with no gaps and no forks. |
 
 Edge cases: **EC-09.1** timestamp precision (stored and hashed as epoch microseconds, so a database round-trip cannot change the hash); **EC-09.2** very large before/after payloads (stored as canonical JSON, size limit); **EC-09.3** a privileged database owner recomputing the entire chain is not prevented by the chain alone, so the head hash is also recorded in each run's output and logs as an external anchor (see ADR-0004).
+
+**Phase 5 implementation:** audit states are stored as canonical-JSON text.
+The verifier checks sequence, links and hashes; an external historical anchor
+can detect a missing or altered anchored event while allowing later valid
+events. The verified head is logged as `audit.head`; it must be retained
+independently to serve as an external anchor. The implementation does not
+currently put that anchor in each reconciliation run's output.
 
 ### FRD-10 Deterministic replay (FR-10, Must)
 

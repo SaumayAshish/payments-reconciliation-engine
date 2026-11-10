@@ -3,6 +3,7 @@ package com.saumay.payments.config;
 import com.saumay.payments.application.AuditLog;
 import com.saumay.payments.application.CaseMatchService;
 import com.saumay.payments.application.CaseMatchStore;
+import com.saumay.payments.application.PendingApprovalGuard;
 import com.saumay.payments.domain.cases.RoutingConfig;
 import com.saumay.payments.infrastructure.persistence.JdbcCaseMatchStore;
 import java.time.Clock;
@@ -20,7 +21,8 @@ public class CaseMatchConfig {
     }
 
     @Bean
-    CaseMatchService caseMatchService(CaseMatchStore store, RoutingConfig routing, Clock clock) {
-        return new CaseMatchService(store, routing, clock);
+    CaseMatchService caseMatchService(CaseMatchStore store, RoutingConfig routing, Clock clock,
+            PendingApprovalGuard pending) {
+        return new CaseMatchService(store, routing, clock, pending);
     }
 }

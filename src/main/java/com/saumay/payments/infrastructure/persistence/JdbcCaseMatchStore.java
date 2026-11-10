@@ -129,7 +129,10 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
     @Override
     public ResolveOutcome resolve(Resolution resolution, Instant at) {
         try {
-            return Objects.requireNonNull(transaction.execute(status -> resolveInTransaction(resolution, at)));
+            return Objects.requireNonNull(transaction.execute(status -> {
+                PendingApprovalLock.requireNone(jdbc, resolution.caseId());
+                return resolveInTransaction(resolution, at);
+            }));
         } catch (DuplicateKeyException e) {
             return ResolveOutcome.LINE_ALREADY_CLAIMED;
         }

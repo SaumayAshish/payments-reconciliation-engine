@@ -1,5 +1,7 @@
 package com.saumay.payments.api;
 
+import com.saumay.payments.application.ApprovalErrorCode;
+import com.saumay.payments.application.ApprovalRejectedException;
 import com.saumay.payments.application.CaseErrorCode;
 import com.saumay.payments.application.CaseRejectedException;
 import java.time.Clock;
@@ -41,6 +43,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Object> handleApiException(ApiException ex, WebRequest request) {
         return respond(ex.status(), ex.code(), ex.getMessage(), List.of(), request);
+    }
+
+    @ExceptionHandler(ApprovalRejectedException.class)
+    public ResponseEntity<Object> handleApprovalRejected(ApprovalRejectedException ex, WebRequest request) {
+        return respond(statusFor(ex.code()), ex.code().name(), ex.getMessage(), List.of(), request);
+    }
+
+    /** 404 unknown request; 403 the maker deciding their own request; 409 not pending or already decided; 422 never possible. */
+    static HttpStatus statusFor(ApprovalErrorCode code) {
+        return switch (code) {
+            case APPROVAL_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case APPROVAL_PENDING, APPROVAL_ALREADY_DECIDED -> HttpStatus.CONFLICT;
+            case SEPARATION_OF_DUTIES_VIOLATION -> HttpStatus.FORBIDDEN;
+            case CONTROLLED_ACTION_NOT_ALLOWED -> HttpStatus.UNPROCESSABLE_CONTENT;
+        };
     }
 
     @ExceptionHandler(CaseRejectedException.class)

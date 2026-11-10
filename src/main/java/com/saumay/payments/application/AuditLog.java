@@ -23,4 +23,9 @@ public interface AuditLog {
 
     /** Walks the whole chain and reports it intact or names the first position that is not. */
     AuditVerification verify();
+
+    /** Verifies the chain and checks that the supplied historical anchor belongs to it. */
+    default AuditVerification verify(AuditHead expected) {
+        throw new UnsupportedOperationException("Historical anchor verification is not implemented");
+    }
 }

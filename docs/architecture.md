@@ -71,21 +71,21 @@ Work flows left to right: ingestion fills the canonical tables, matching consume
 
 ```text
 com.saumay.payments
-├── domain                 plain Java, no framework imports
-│   ├── money              Money, CurrencyCode, minor-unit arithmetic
-│   ├── model              CanonicalLine, StatementLine, LedgerEntry, BusinessDate, ids
-│   ├── cases              ExceptionCase, state machine, routing, SLA clock
-│   ├── approval           ApprovalRequest, maker-checker policy
-│   └── audit              AuditEvent, hash chain, verifier
-├── matching               plain Java: tiers, scoring, candidate index, claim resolver, output hash
-├── ingestion              plain Java: CSV and camt.053 parsers, normaliser (the only place BigDecimal is allowed)
-├── application            use-case services and ports (repositories, Clock, ActorContext)
-├── infrastructure
-│   ├── persistence        JDBC adapters, Flyway migrations live in resources
-│   ├── outbox             outbox writer and publisher (Phase 7)
-│   └── metrics            Micrometer adapters
-├── api                    Spring Boot controllers, DTOs, error mapping, security (Phase 8)
-└── config                 Spring configuration and typed properties
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ domain                 plain Java, no framework imports
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ money              Money, CurrencyCode, minor-unit arithmetic
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ model              CanonicalLine, StatementLine, LedgerEntry, BusinessDate, ids
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ cases              ExceptionCase, state machine, routing, SLA clock
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ approval           ApprovalRequest, maker-checker policy
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ audit              AuditEvent, hash chain, verifier
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ matching               plain Java: tiers, scoring, candidate index, claim resolver, output hash
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ ingestion              plain Java: CSV and camt.053 parsers, normaliser (the only place BigDecimal is allowed)
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ application            use-case services and ports (repositories, Clock, ActorContext)
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ infrastructure
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ persistence        JDBC adapters, Flyway migrations live in resources
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ outbox             outbox writer and publisher (Phase 7)
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡   ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ metrics            Micrometer adapters
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ api                    Spring Boot controllers, DTOs, error mapping, security (Phase 8)
+ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ config                 Spring configuration and typed properties
 ```
 
 ArchUnit rules (written in Phase 1, run on every build):
@@ -268,7 +268,7 @@ erDiagram
     RUN_MATCH ||--o{ LINE_CLAIM : "run match claims"
     EXCEPTION_CASE ||--o{ LINE_CLAIM : "manual, split, unmatch"
     LINE_CLAIM |o--o| LINE_CLAIM : "released by"
-    EXCEPTION_CASE ||--o{ APPROVAL_REQUEST : "needs (planned, Phase 5)"
+    EXCEPTION_CASE ||--o{ APPROVAL_REQUEST : "needs"
     AUDIT_EVENT }o--|| EXCEPTION_CASE : "entity ref (no FK)"
 
     INGESTION_FILE {
@@ -445,15 +445,17 @@ erDiagram
         text entity_id
         text actor
         text action
-        jsonb before_state
-        jsonb after_state
+        text before_state "canonical JSON"
+        text after_state "canonical JSON"
         bigint occurred_at_micros
         char64 previous_hash
         char64 current_hash
     }
 ```
 
-Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating point reaches a comparison against a threshold. The run tables (`RECONCILIATION_RUN` and the `RUN_` tables) are built in migration V3 and are append-only. The case tables are built in V4 (`EXCEPTION_CASE` is mutable workflow, version-guarded and trigger-protected; its four child tables are append-only) and the claim ledger `LINE_CLAIM` in V5 to V7 (ADR-0009). A manual match, split or unmatch is therefore a set of claim rows plus the resolution fields on the case, not a persistent `MATCH` with a `CONFIRMED` or `REVERSED` state as first proposed. `APPROVAL_REQUEST` and `AUDIT_EVENT` are still the Phase 0 proposal for Phase 5.
+Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating point reaches a comparison against a threshold. The run tables (`RECONCILIATION_RUN` and the `RUN_` tables) are built in migration V3 and are append-only. The case tables are built in V4 (`EXCEPTION_CASE` is mutable workflow, version-guarded and trigger-protected; its four child tables are append-only) and the claim ledger `LINE_CLAIM` in V5 to V7 (ADR-0009). A manual match, split or unmatch is therefore a set of claim rows plus the resolution fields on the case, not a persistent `MATCH` with a `CONFIRMED` or `REVERSED` state as first proposed. `AUDIT_EVENT` is implemented in V8 and `APPROVAL_REQUEST` in V9. V10 and V11
+add versioned, sealed approval-threshold configuration. The audit state columns
+are canonical-JSON text, not JSONB.
 
 ### 7.1 Key indexes and why
 
@@ -483,7 +485,8 @@ Scores are stored as scaled integers (`score_milli`, 0 to 1000), so no floating 
 - Ingestion: one transaction per file, advisory lock on the hash, and a shared lock on the run cut-off so a run never reads a half-committed ingestion.
 - Run: `create` takes the exclusive ledger cut-off lock, reads the highest ledger sequence, writes the `CREATED` run and commits before matching starts, so every sequence at or below the cut-off is committed (ADR-0003 amendment). A run that fails is marked `FAILED` with a generic reason; the cause stays in the server log.
 - Cases: optimistic locking. Every update is `UPDATE ... WHERE id = ? AND version = ?`; a stale version returns `CASE_VERSION_CONFLICT` (409), and the `guard_exception_case` trigger refuses any update that does not raise `version` by exactly 1. The case row is locked `FOR UPDATE` while a timeline ordinal is taken. Claim writers take the shared run cut-off advisory lock and the per-line bucket lock, so matching and manual matching serialise on a line, not on the table (ADR-0009).
-- Audit append: serialised with a transaction-scoped advisory lock so the chain stays linear.
+- Audit append: transaction-scoped advisory lock `(7002, 1)` serializes the chain. It is acquired last in audited write transactions.
+- Configuration updates: transaction-scoped advisory lock `(7003, 1)` serializes configuration writers; the audit lock is acquired afterward.
 - Isolation: `READ COMMITTED` plus the constraints above. Revisit only if a test shows an anomaly.
 
 ## 8. Observability
