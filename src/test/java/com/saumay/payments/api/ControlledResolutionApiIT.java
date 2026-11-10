@@ -628,6 +628,33 @@ class ControlledResolutionApiIT {
         assertEquals(400, malformed.statusCode(), malformed.body());
     }
 
+    @Test
+    void anSlaEscalatedPendingApprovalCanProceedAfterInvestigationRestarts() throws Exception {
+        long id = investigating(caseOf(BIG));
+        HttpResponse<String> requested = resolve(id, "carol", "WRITE_OFF");
+        assertEquals(202, requested.statusCode(), requested.body());
+        long approval = number(requested.body(), "id");
+
+        context.getBean(com.saumay.payments.application.SlaEscalationService.class)
+                .run(java.time.LocalDate.parse("2030-01-08"));
+        assertEquals("ESCALATED", caseValue(id, "status"));
+        assertEquals("PENDING", approvalValue(approval, "status"));
+
+        HttpResponse<String> premature = call("POST", "/api/v1/approvals/" + approval + "/approve",
+                "dave", "application/json", "{}");
+        assertEquals(409, premature.statusCode(), premature.body());
+        assertEquals("PENDING", approvalValue(approval, "status"));
+
+        HttpResponse<String> restarted = call("POST", "/api/v1/exceptions/" + id + "/investigate",
+                "alice", "application/json", "{\"expectedVersion\":" + version(id) + "}");
+        assertEquals(200, restarted.statusCode(), restarted.body());
+
+        HttpResponse<String> approved = call("POST", "/api/v1/approvals/" + approval + "/approve",
+                "dave", "application/json", "{}");
+        assertEquals(200, approved.statusCode(), approved.body());
+        assertEquals("RESOLVED", caseValue(id, "status"));
+    }
+
     // ---- helpers ----
 
     private long caseOf(long amountMinor) {

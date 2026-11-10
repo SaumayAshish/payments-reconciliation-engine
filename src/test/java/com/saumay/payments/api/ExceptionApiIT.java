@@ -224,6 +224,176 @@ class ExceptionApiIT {
         assertTrue(reopened.body().contains("\"amountMinor\":1000"));
     }
 
+    @Test
+    void ageingReportCountsTheCurrentUnresolvedSnapshot() throws Exception {
+        HttpResponse<String> first = get("/api/v1/reports/ageing?asOf=2026-10-12");
+        HttpResponse<String> second = get("/api/v1/reports/ageing?asOf=2026-10-12");
+
+        assertEquals(200, first.statusCode(), first.body());
+        assertEquals(first.body(), second.body());
+        assertTrue(first.body().contains("\"unresolvedCount\":2"), first.body());
+
+        long id = investigating("ONLY-A");
+        HttpResponse<String> matched = act(CASES + "/" + id + "/match", "alice",
+                matchBody(2, "same payer", "ONLY-A", "LATE-1"));
+        assertEquals(200, matched.statusCode(), matched.body());
+
+        HttpResponse<String> after = get("/api/v1/reports/ageing?asOf=2026-10-12");
+        assertEquals(200, after.statusCode(), after.body());
+        assertTrue(after.body().contains("\"unresolvedCount\":1"), after.body());
+        assertError(get("/api/v1/reports/ageing?asOf=bad-date"), 400, "REQUEST_INVALID");
+    }
+
+    @Test
+    void overlappingSlaRunsEscalateEachOverdueCaseOnlyOnce() throws Exception {
+        var job = context.getBean(com.saumay.payments.application.SlaEscalationService.class);
+        long before = jdbc.queryForObject(
+                "SELECT count(*) FROM audit_event WHERE entity_type = 'exception_case'"
+                        + " AND action = 'CASE_ESCALATED'", Long.class);
+        var ready = new java.util.concurrent.CountDownLatch(2);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+
+        try {
+            java.util.concurrent.Callable<Long> run = () -> {
+                ready.countDown();
+                if (!start.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("start timed out");
+                }
+                return job.run(java.time.LocalDate.parse("2030-01-08"));
+            };
+            var first = executor.submit(run);
+            var second = executor.submit(run);
+            assertTrue(ready.await(10, java.util.concurrent.TimeUnit.SECONDS));
+            start.countDown();
+
+            long changed = first.get(30, java.util.concurrent.TimeUnit.SECONDS)
+                    + second.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(2, changed);
+            assertEquals(0, job.run(java.time.LocalDate.parse("2030-01-08")));
+            assertEquals(2, jdbc.queryForObject(
+                    "SELECT count(*) FROM exception_case WHERE status = 'ESCALATED'", Integer.class));
+            assertEquals(before + 2, jdbc.queryForObject(
+                    "SELECT count(*) FROM audit_event WHERE entity_type = 'exception_case'"
+                            + " AND action = 'CASE_ESCALATED'", Long.class));
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void resolutionReportIncludesResolvedCasesAndExcludesOpenCases() throws Exception {
+        HttpResponse<String> before = get("/api/v1/reports/resolution-time");
+        assertEquals(200, before.statusCode(), before.body());
+        assertTrue(before.body().contains("\"resolvedCount\":0"), before.body());
+
+        long id = investigating("ONLY-A");
+        HttpResponse<String> matched = act(CASES + "/" + id + "/match", "alice",
+                matchBody(2, "same payer", "ONLY-A", "LATE-1"));
+        assertEquals(200, matched.statusCode(), matched.body());
+
+        HttpResponse<String> after = get("/api/v1/reports/resolution-time");
+        assertEquals(200, after.statusCode(), after.body());
+        assertTrue(after.body().contains("\"resolvedCount\":1"), after.body());
+        assertTrue(after.body().contains("\"invalidTimeOrderCount\":"), after.body());
+    }
+
+    @Test
+    void matchReportUsesTheCompletedRunAndItsStoredTierCounts() throws Exception {
+        HttpResponse<String> first = get("/api/v1/reports/match/" + runId);
+        HttpResponse<String> second = get("/api/v1/reports/match/" + runId);
+
+        assertEquals(200, first.statusCode(), first.body());
+        assertEquals(first.body(), second.body());
+        assertEquals(runId, number(first.body(), "runId"));
+        assertEquals(1, number(first.body(), "matchCount"));
+        assertTrue(first.body().contains("\"tier\":\"EXACT\""), first.body());
+        assertTrue(first.body().contains("\"band\":\"AUTO_CONFIRM\""), first.body());
+        assertError(get("/api/v1/reports/match/999999"), 404, "RUN_NOT_FOUND");
+        assertError(get("/api/v1/reports/match/0"), 400, "REQUEST_INVALID");
+    }
+
+    @Test
+    void workloadReportGroupsUnresolvedCasesAndExcludesResolvedCases() throws Exception {
+        HttpResponse<String> initial = get("/api/v1/reports/workload");
+        assertEquals(200, initial.statusCode(), initial.body());
+        assertTrue(initial.body().contains("\"status\":\"OPEN\""), initial.body());
+        assertTrue(initial.body().contains("\"count\":2"), initial.body());
+
+        long id = investigating("ONLY-A");
+        HttpResponse<String> inProgress = get("/api/v1/reports/workload");
+        assertEquals(200, inProgress.statusCode(), inProgress.body());
+        assertTrue(inProgress.body().contains("\"status\":\"INVESTIGATING\""), inProgress.body());
+        assertTrue(inProgress.body().contains("\"status\":\"OPEN\""), inProgress.body());
+
+        HttpResponse<String> matched = act(CASES + "/" + id + "/match", "alice",
+                matchBody(2, "same payer", "ONLY-A", "LATE-1"));
+        assertEquals(200, matched.statusCode(), matched.body());
+
+        HttpResponse<String> after = get("/api/v1/reports/workload");
+        assertEquals(200, after.statusCode(), after.body());
+        assertTrue(!after.body().contains("\"status\":\"RESOLVED\""), after.body());
+        assertTrue(after.body().contains("\"count\":1"), after.body());
+        assertEquals(after.body(), get("/api/v1/reports/workload").body());
+    }
+
+    @Test
+    void operationalMetricsExposeQueueDepthAndRequestTimers() throws Exception {
+        context.getBean(com.saumay.payments.config.WorkloadMetrics.class).refresh();
+        var meters = context.getBean(io.micrometer.core.instrument.MeterRegistry.class);
+
+        double queueDepth = meters.find("exception_queue_depth").gauges().stream()
+                .mapToDouble(io.micrometer.core.instrument.Gauge::value)
+                .sum();
+        assertEquals(2.0, queueDepth);
+        assertTrue(meters.find("ingestion_request_duration").timer() != null);
+        assertTrue(meters.find("reconciliation_request_duration").timer() != null);
+        assertTrue(meters.find("sla_breach_count").counter() != null);
+
+        HttpResponse<String> scrape = get("/actuator/prometheus");
+        assertEquals(200, scrape.statusCode(), scrape.body());
+        assertTrue(scrape.body().contains("exception_queue_depth"), scrape.body());
+        assertTrue(scrape.body().contains("ingestion_request_duration_seconds_count"), scrape.body());
+        assertTrue(scrape.body().contains("reconciliation_request_duration_seconds_count"), scrape.body());
+    }
+
+    @Test
+    void latestRunAndExceptionMetricsUseTheDocumentedDenominators() throws Exception {
+        context.getBean(com.saumay.payments.config.OperationalRunMetrics.class).refresh();
+        var meters = context.getBean(io.micrometer.core.instrument.MeterRegistry.class);
+
+        double rate = meters.find("reconciliation_match_rate").gauge().value();
+        assertEquals(1.0 / 3.0, rate, 0.000001);
+        assertEquals(1.0, meters.find("matching_tier_distribution")
+                .tag("tier", "EXACT").gauge().value());
+        assertEquals(2.0, meters.find("reconciliation_exception_count")
+                .tag("kind", "MISSING_LEDGER").gauge().value());
+
+        HttpResponse<String> scrape = get("/actuator/prometheus");
+        assertEquals(200, scrape.statusCode(), scrape.body());
+        assertTrue(scrape.body().contains("reconciliation_match_rate"), scrape.body());
+        assertTrue(scrape.body().contains("matching_tier_distribution"), scrape.body());
+        assertTrue(scrape.body().contains("reconciliation_exception_count"), scrape.body());
+    }
+
+    @Test
+    @org.junit.jupiter.api.extension.ExtendWith(
+            org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void timedRequestLogsAreJsonAndContainTheCorrelationId(
+            org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        HttpResponse<String> response = call("POST", "/api/v1/ingestions/statements",
+                null, "text/csv", STATEMENT);
+        assertEquals(200, response.statusCode(), response.body());
+        String correlation = response.headers().firstValue("X-Correlation-Id").orElseThrow();
+
+        assertTrue(output.getOut().lines().anyMatch(line ->
+                line.startsWith("{") && line.contains("\"correlationId\":\"" + correlation + "\"")
+                        && line.contains("operational.request operation=statement")),
+                output.getOut());
+    }
+
     private static long investigating(String statementReference) throws Exception {
         long id = caseFor(statementReference);
         assertEquals(200, act(CASES + "/" + id + "/assign", "lead",

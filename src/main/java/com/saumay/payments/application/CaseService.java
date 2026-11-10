@@ -120,6 +120,31 @@ public final class CaseService {
                         current.priority().raisedOneLevel(), rule)));
     }
 
+    /**
+     * Applies an SLA escalation only if the candidate is still overdue and
+     * unchanged. Returns false when another writer won or the case moved on.
+     */
+    public boolean escalateForSla(long caseId, long expectedVersion, java.time.LocalDate asOf) {
+        Objects.requireNonNull(asOf, "asOf");
+        CaseRecord current = store.find(caseId).orElse(null);
+        if (current == null || current.version() != expectedVersion
+                || current.status() == CaseStatus.RESOLVED || current.status() == CaseStatus.ESCALATED
+                || !com.saumay.payments.domain.model.BusinessCalendar.rollForward(asOf)
+                        .isAfter(current.dueBusinessDate())) {
+            return false;
+        }
+
+        String actor = "system-sla";
+        String rule = RoutingRules.RULE_SLA_BREACH;
+        Activity activity = new Activity(CaseActivityType.ESCALATED, actor, current.status(),
+                CaseStatus.ESCALATED, "SLA breached");
+        CaseChange change = new CaseChange(caseId, expectedVersion, CaseStatus.ESCALATED, current.owner(),
+                CaseTeam.TEAM_LEAD, current.priority().raisedOneLevel(), rule, activity, null,
+                CaseAudit.note("CASE_ESCALATED", current, CaseStatus.ESCALATED, current.owner(),
+                        CaseTeam.TEAM_LEAD, current.priority().raisedOneLevel(), rule));
+        return store.apply(change, clock.instant());
+    }
+
     /** Adds a comment. Allowed on any case, resolved ones included; it never changes the case itself. */
     public int comment(long caseId, String author, String body) {
         String by = requiredName(author, "author");

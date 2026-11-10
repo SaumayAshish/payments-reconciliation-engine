@@ -189,6 +189,51 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/ageing:
+    get:
+      summary: Read ageing and SLA counts for current unresolved cases
+      description: >
+        Groups the current case snapshot by team and exception kind. The asOf
+        date controls business-day age and SLA calculations; it does not
+        reconstruct historical case states. Resolved cases are excluded.
+      x-required-roles: [TEAM_LEAD, AUDITOR, ADMIN]
+      parameters:
+        - { name: asOf, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Deterministically ordered ageing and SLA aggregates }
+        '400': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/resolution-time:
+    get:
+      summary: Read elapsed resolution-time statistics
+      description: >
+        Groups current resolved cases by their current team and exception kind.
+        Durations are whole elapsed seconds from creation to resolution. Invalid
+        timestamp order is counted separately and excluded from duration totals.
+      x-required-roles: [TEAM_LEAD, AUDITOR, ADMIN]
+      responses:
+        '200': { description: Deterministically ordered resolution-time aggregates }
+  /api/v1/reports/match/{runId}:
+    get:
+      summary: Read match counts by tier and band for a completed run
+      description: >
+        Returns stored run counts and match counts grouped by tier and band.
+        No match rate is calculated. Unknown or incomplete runs return 404.
+      x-required-roles: [TEAM_LEAD, AUDITOR, ADMIN]
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        '200': { description: Completed-run match counts }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/workload:
+    get:
+      summary: Read current unresolved workload by team and status
+      description: >
+        Returns deterministic team and status groups for the current case
+        snapshot. Resolved cases are excluded.
+      x-required-roles: [TEAM_LEAD, ADMIN]
+      responses:
+        '200': { description: Current workload groups }
   /api/v1/ingestions/statements:
     post:
       summary: Upload a bank statement

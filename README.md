@@ -2,8 +2,8 @@
 
 A Java 25 service that ingests bank statements and ledger entries, auto-matches them with a deterministic four-tier engine, and routes everything else to an auditable exceptions queue with maker-checker approval, SLA tracking and a tamper-evident audit trail.
 
-> **Status: Phase 5 implementation is under gate review.** The phase gate report
-> records the verified test results, remaining limitations and approval status.
+> **Status: Phases 0-5 approved; Phase 6 is in progress.** The ageing report
+> uses a current case snapshot and an explicit as-of date.
 
 ## Why this exists
 
@@ -14,12 +14,12 @@ Banks lose analyst hours every day matching statement lines to ledger entries, c
 | Phase | Scope | Status | Gate evidence |
 | --- | --- | --- | --- |
 | 0 | BRD, FRD, ADRs, architecture, glossary, data spec, runbook, RCA template, repo skeleton | **Complete, approved 2026-10-07** | This repository |
-| 1 | Domain model, `Money`, Flyway schema | Not started | |
-| 2 | CSV and camt.053 ingestion, idempotency | Complete, gate report pending approval, and add 184 automated tests (152 unit, 32 integration) passing| |
-| 3 | Four-tier matching, corpus, deterministic replay | Not started | |
-| 4 | Exceptions, manual match, split, unmatch | Not started | |
-| 5 | Audit chain, maker-checker | Not started | |
-| 6 | Reporting, metrics, structured logs | Not started | |
+| 1 | Domain model, `Money`, Flyway schema | Complete and approved | Phase 1 gate |
+| 2 | CSV and camt.053 ingestion, idempotency | Complete and approved | Phase 2 gate |
+| 3 | Four-tier matching, corpus, deterministic replay | Complete and approved | Phase 3 gate |
+| 4 | Exceptions, manual match, split, unmatch | Complete and approved | Phase 4 gate |
+| 5 | Audit chain, maker-checker | Complete and approved | CI for commit `10fd859` |
+| 6 | Reporting, metrics, structured logs | Gate review in progress | Full local `mvn verify` passed; GitHub CI pending |
 | 7 | Kafka and transactional outbox | Not started | |
 | 8 | Authentication and RBAC | Not started | |
 | 9 | Thin dashboard | Not started | |
@@ -30,7 +30,13 @@ Phase numbering follows the build brief; the mapping to the BRD's six phases is 
 
 ## Engineering evidence
 
-None yet. This section will hold only measured numbers (tests, coverage, match rate by tier, false auto-matches, throughput with hardware named) once they exist. See [docs/benchmarks.md](docs/benchmarks.md).
+The full local verification for commit `10fd859` passed 483 unit tests and
+201 integration tests, with all configured coverage checks met. GitHub Actions
+also passed for that commit. The Phase 6 local `mvn verify` passed 496 unit
+tests and 210 integration tests, with all configured coverage checks met.
+GitHub CI and the Phase 6 gate review are pending. See
+[docs/benchmarks.md](docs/benchmarks.md) for separately recorded matching
+measurements.
 
 ## Documentation
 
@@ -45,6 +51,9 @@ None yet. This section will hold only measured numbers (tests, coverage, match r
 | [Traceability matrix](docs/traceability-matrix.md) | BRD to FRD to code to test to evidence |
 | [API catalogue](docs/api/README.md) | Endpoints, roles, idempotency (OpenAPI follows per phase) |
 | [Runbook](docs/runbook.md) | Stuck-ingestion procedure and stubs |
+| [Audit verification](docs/audit-verification.md) | Audit verification and external anchors |
+| [Approval configuration](docs/phase5-configuration.md) | Versioned approval thresholds |
+| [Phase 6 reporting](docs/phase6-reporting.md) | Current-snapshot reporting and SLA job |
 | [RCA template](templates/rca-template.md) | Blameless incident analysis |
 
 ## Local setup (target experience, Phase 1 onward)
@@ -55,7 +64,8 @@ docker compose up -d        # PostgreSQL (more services arrive in later phases)
 mvn verify                  # build and test (Maven wrapper is added in Phase 1)
 ```
 
-Requires JDK 25 and Docker. The Phase 0 skeleton has **not** been built yet; see the note at the top of [pom.xml](pom.xml).
+Requires JDK 25 and Docker Desktop for the integration tests. Configure a
+local-only database password before starting the application.
 
 ## Repository layout
 

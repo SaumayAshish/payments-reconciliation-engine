@@ -93,6 +93,9 @@ class AuditVerifyProcessIT {
             }
 
             assertTrue(intact.output().contains("audit.head seq=2 hash="), intact.output());
+            assertTrue(intact.output().lines().anyMatch(line ->
+                    line.startsWith("{") && line.contains("\"logger_name\"")
+                            && line.contains("audit.head seq=2 hash=")), intact.output());
 
             assertTrue(audit.verify(firstHead)
                     instanceof com.saumay.payments.domain.audit.AuditVerification.Failed);
