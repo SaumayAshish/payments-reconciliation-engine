@@ -111,7 +111,10 @@ class AuditVerifyProcessIT {
                 .toAbsolutePath();
         assertTrue(Files.isRegularFile(jar), "Executable JAR was not built: " + jar);
 
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
+        if (!Files.isRegularFile(java)) {
+            java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        }
         Path output = tempDir.resolve(outputName);
         ProcessBuilder builder = new ProcessBuilder(java.toString(), "-jar", jar.toString(),
                 "--audit.verify",
