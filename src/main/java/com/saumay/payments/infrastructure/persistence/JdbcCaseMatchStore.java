@@ -203,6 +203,7 @@ public final class JdbcCaseMatchStore implements CaseMatchStore {
                 match.linkedCaseId(), nc.naturalKey(), nc.amountMinor(), nc.currency(), nc.priority().name(),
                 nc.team().name(), nc.routingRule(), nc.createdBusinessDate(), nc.slaBusinessDays(),
                 nc.dueBusinessDate()));
+        JdbcOutbox.caseCreated(jdbc, newCaseId, "UNMATCH", at);
         String origin = match.linkedCaseId() != null ? "case " + match.linkedCaseId() : "an auto-confirmed run match";
         jdbc.update(INSERT_CREATED_ACTIVITY, newCaseId, actor, "Opened by unmatching " + origin + ": " + reason, now);
         for (ClaimedLine claimed : match.lines()) {

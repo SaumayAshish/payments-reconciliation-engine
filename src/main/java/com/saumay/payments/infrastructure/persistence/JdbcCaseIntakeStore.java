@@ -97,6 +97,7 @@ public final class JdbcCaseIntakeStore implements CaseIntakeStore {
                         + " by rule " + c.routing().ruleName();
                 activities.add(new Object[] {ids.get(0), SYSTEM_ACTOR, detail, now});
                 createdIds.add(ids.get(0));
+                JdbcOutbox.caseCreated(jdbc, ids.get(0), "RUN", now.toInstant());
             }
         }
         if (!activities.isEmpty()) {

@@ -26,7 +26,7 @@ Phase 3 status: **FR-01 to FR-05 and FR-10 done; NFR-02, NFR-03 and NFR-04 done;
 | FR-10 | FRD-10 | Must | `ReconciliationRun`, `CanonicalOutput`, `ReconciliationRunService`, `JdbcRunStore`, `ReconciliationController` (replay endpoint) | `ReconciliationRunTest`, `CanonicalOutputTest`, `MatchingDeterminismTest`, `ReconciliationRunServiceTest`, `JdbcRunStoreIT`, `ReconciliationApiIT`; AC-10.5 holds by construction but has no multi-thread test | CI; identical output hashes across repeats in `docs/benchmarks.md` | 3 | done |
 | FR-11 | FRD-11 | Should | `CaseAgeing`, `AgeingReportService`, `ResolutionReportService`, report readers, `ReportingController`, `SlaEscalationService` | `CaseAgeingTest`, `AgeingReportServiceTest`, `ResolutionReportServiceTest`, `ExceptionApiIT`, `ControlledResolutionApiIT` | `docs/phase6-reporting.md`; `docs/api/openapi.yaml`; full local build passed; CI pending | 6 | gate review in progress |
 | FR-12 | FRD-12 | Should | `ManualMatchRules`, `CaseMatchService`, `JdbcCaseMatchStore`, claim ledger `line_claim` (V5 to V7), `ExceptionController` (match and both unmatch endpoints) | `ManualMatchRulesTest`, `CaseMatchServiceTest`, `JdbcCaseMatchStoreIT` (match, split, bad sums, claimed line, two-thread race with exactly one winner, unmatch, double unmatch), `ClaimSchemaIT`, `JdbcRunClaimsIT`, `ExceptionApiIT` | CI; `docs/api/openapi.yaml`; ADR-0009. AC-12.5 and audit: Phase 5 | 4 | done, except AC-12.5 and audit events |
-| FR-13 | FRD-13 | Could | `OutboxWriter`, `OutboxPublisher`, `ExceptionEventConsumer` | `OutboxAtomicityIT`, `KafkaDownIT`, `DuplicateEventIT` | CI | 7 | planned |
+| FR-13 | FRD-13 | Could | Transactional outbox in progress; publisher and idempotent consumer pending | Run/outbox rollback and duplicate-completion tests in progress; Kafka failure and duplicate-delivery tests pending | `docs/phase7-events.md`; Phase 7 gate pending | 7 | in progress |
 | FR-14 | FRD-14 | Could | Thin read-only dashboard | UI smoke test | Screenshot in README | 9 | planned |
 
 ## Non-functional requirements
@@ -63,3 +63,15 @@ These come from the master prompt and are tracked separately so BRD traceability
 | Q-07 run input scope | FR-10, NFR-04 |
 | Q-09, Q-10 thresholds and SLA values | FR-06, FR-08, FR-11 |
 | Q-13 interim identity | FR-08, FR-09 |
+
+## Phase 7 event delivery trace
+
+| Capability | Implementation and verification |
+| --- | --- |
+| Run-completed and case-created events | Transactional outbox; JDBC transaction and rollback integration tests |
+| Reliable publication | Leased claims, acknowledgement-based publication and retry; PostgreSQL and Kafka integration tests |
+| Idempotent automatic intake | Processed-event marker in the intake transaction; duplicate and rollback tests |
+| Consumer offset handling | Record-level commits; real Kafka restart and malformed-record integration test |
+| Application wiring | Opt-in Spring application-context integration test |
+
+Phase 7 changes await final review and GitHub Actions verification.

@@ -84,6 +84,7 @@ class JdbcCaseMatchStoreIT {
 
     @BeforeEach
     void emptyTheTables() {
+        jdbc.execute("TRUNCATE outbox_event RESTART IDENTITY");
         jdbc.execute("TRUNCATE line_claim, case_attachment, case_comment, case_assignment, case_activity,"
                 + " exception_case, run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
                 + " run_match, reconciliation_run_statement_batch, reconciliation_run, rejected_line,"
@@ -265,6 +266,10 @@ class JdbcCaseMatchStoreIT {
                 "SELECT origin, linked_case_id, kind, case_class, status, amount_minor FROM exception_case WHERE id = ?",
                 reopened);
         assertEquals("UNMATCH", row.get("origin"));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'CASE_CREATED'"
+                        + " AND aggregate_id = ? AND payload LIKE '%\"origin\":\"UNMATCH\"%'",
+                Integer.class, String.valueOf(reopened)));
         assertEquals(caseA, ((Number) row.get("linked_case_id")).longValue());
         assertEquals("LOW_CONFIDENCE", row.get("kind"));
         assertEquals("REVIEW", row.get("case_class"));
@@ -290,6 +295,10 @@ class JdbcCaseMatchStoreIT {
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT origin, linked_case_id, amount_minor FROM exception_case WHERE id = ?", reopened);
         assertEquals("UNMATCH", row.get("origin"));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'CASE_CREATED'"
+                        + " AND aggregate_id = ? AND payload LIKE '%\"origin\":\"UNMATCH\"%'",
+                Integer.class, String.valueOf(reopened)));
         assertNull(row.get("linked_case_id"));
         assertEquals(1000, ((Number) row.get("amount_minor")).longValue());
         assertEquals(2, count("line_claim WHERE action = 'RELEASE' AND case_id = " + reopened));

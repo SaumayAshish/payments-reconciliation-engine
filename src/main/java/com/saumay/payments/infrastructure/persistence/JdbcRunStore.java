@@ -284,8 +284,10 @@ public final class JdbcRunStore implements RunStore {
             claimAutoConfirmedLines(runId);
             writeExceptions(runId, result);
             writeCarriedAndNotes(runId, result);
-            audit.append(RunAudit.completed(runId, result, Objects.requireNonNull(
-                    jdbc.queryForObject("SELECT now()", java.sql.Timestamp.class)).toInstant()));
+            Instant occurredAt = Objects.requireNonNull(
+                    jdbc.queryForObject("SELECT now()", java.sql.Timestamp.class)).toInstant();
+            JdbcOutbox.runCompleted(jdbc, runId, occurredAt);
+            audit.append(RunAudit.completed(runId, result, occurredAt));
         });
     }
 

@@ -70,6 +70,7 @@ class JdbcRunStoreIT {
 
     @BeforeEach
     void emptyTheTables() {
+        jdbc.execute("TRUNCATE outbox_event RESTART IDENTITY");
         jdbc.execute("DROP TRIGGER IF EXISTS trg_slow_ledger ON ledger_entry");
         jdbc.execute("TRUNCATE approval_request, line_claim, case_attachment, case_comment, case_assignment, case_activity, exception_case, run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
                 + " run_match, reconciliation_run_statement_batch, reconciliation_run, rejected_line,"
@@ -179,6 +180,54 @@ class JdbcRunStoreIT {
         assertThrows(IllegalStateException.class, () -> runs.markRunning(run.id()));
         assertEquals(1, count("run_match"));
         assertEquals(2, count("run_match_line"));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'RUN_COMPLETED'"
+                        + " AND aggregate_id = ? AND status = 'PENDING'",
+                Integer.class, String.valueOf(run.id())));
+        String payload = jdbc.queryForObject(
+                "SELECT payload FROM outbox_event WHERE event_type = 'RUN_COMPLETED'"
+                        + " AND aggregate_id = ?", String.class, String.valueOf(run.id()));
+        assertTrue(payload.contains("\"eventType\":\"RUN_COMPLETED\""), payload);
+        assertTrue(payload.contains("\"runId\":" + run.id()), payload);
+        assertEquals("payments.run.completed.v1", jdbc.queryForObject(
+                "SELECT topic FROM outbox_event WHERE aggregate_id = ?", String.class,
+                String.valueOf(run.id())));
+    }
+
+    @Test
+    void anAuditFailureRollsBackRunCompletionAndItsOutboxEvent() {
+        RunHeader run = runningRunWithOneExactMatch();
+        RunInputs inputs = runs.loadInputs(run.id());
+        RunResult result = ReconciliationRun.compute(inputs.statements(), inputs.ledger(),
+                inputs.businessDate(), inputs.config());
+
+        DriverManagerDataSource dataSource =
+                new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+        var realAudit = new JdbcAuditLog(dataSource);
+        com.saumay.payments.application.AuditLog failingAudit =
+                new com.saumay.payments.application.AuditLog() {
+                    @Override
+                    public com.saumay.payments.domain.audit.AuditEvent append(
+                            com.saumay.payments.domain.audit.AuditDraft draft) {
+                        throw new IllegalStateException("simulated audit failure");
+                    }
+
+                    @Override
+                    public com.saumay.payments.domain.audit.AuditHead head() {
+                        return realAudit.head();
+                    }
+
+                    @Override
+                    public com.saumay.payments.domain.audit.AuditVerification verify() {
+                        return realAudit.verify();
+                    }
+                };
+        JdbcRunStore failingRuns = new JdbcRunStore(dataSource, failingAudit);
+
+        assertThrows(IllegalStateException.class, () -> failingRuns.complete(run.id(), result, 5));
+        assertEquals(RunStatus.RUNNING, runs.find(run.id()).orElseThrow().status());
+        assertEquals(0, count("run_match"));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM outbox_event", Integer.class));
     }
 
     @Test

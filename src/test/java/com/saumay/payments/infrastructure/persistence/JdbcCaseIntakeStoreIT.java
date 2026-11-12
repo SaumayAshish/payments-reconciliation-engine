@@ -78,6 +78,7 @@ class JdbcCaseIntakeStoreIT {
 
     @BeforeEach
     void emptyTheTables() {
+        jdbc.execute("TRUNCATE outbox_event RESTART IDENTITY");
         jdbc.execute("TRUNCATE case_attachment, case_comment, case_assignment, case_activity, exception_case,"
                 + " run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
                 + " run_match, reconciliation_run_statement_batch, reconciliation_run, rejected_line,"
@@ -132,6 +133,9 @@ class JdbcCaseIntakeStoreIT {
         service.openCases(run.id());
         int casesBefore = count("exception_case");
         int activityBefore = count("case_activity");
+        int eventsBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'CASE_CREATED'", Integer.class);
+        assertEquals(casesBefore, eventsBefore);
 
         IntakeResult again = service.openCases(run.id());
 
@@ -139,6 +143,50 @@ class JdbcCaseIntakeStoreIT {
         assertEquals(run.summary().exceptions(), again.alreadyOpen());
         assertEquals(casesBefore, count("exception_case"));
         assertEquals(activityBefore, count("case_activity"));
+        assertEquals(eventsBefore, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'CASE_CREATED'", Integer.class));
+        assertEquals(casesBefore, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event o JOIN exception_case c"
+                        + " ON o.aggregate_id = c.id::text"
+                        + " WHERE o.event_type = 'CASE_CREATED'"
+                        + " AND o.topic = 'payments.exception.created.v1'"
+                        + " AND o.message_key = c.id::text",
+                Integer.class));
+    }
+
+    @Test
+    void anAuditFailureRollsBackCreatedCasesAndTheirEvents() {
+        RunHeader run = aCompletedRunWithAMissingLedgerEntry();
+        var realAudit = new JdbcAuditLog(dataSource);
+        com.saumay.payments.application.AuditLog failingAudit =
+                new com.saumay.payments.application.AuditLog() {
+                    @Override
+                    public com.saumay.payments.domain.audit.AuditEvent append(
+                            com.saumay.payments.domain.audit.AuditDraft draft) {
+                        throw new IllegalStateException("simulated audit failure");
+                    }
+
+                    @Override
+                    public com.saumay.payments.domain.audit.AuditHead head() {
+                        return realAudit.head();
+                    }
+
+                    @Override
+                    public com.saumay.payments.domain.audit.AuditVerification verify() {
+                        return realAudit.verify();
+                    }
+                };
+        var failingStore = new JdbcCaseIntakeStore(
+                dataSource, Clock.fixed(NOW, ZoneOffset.UTC), failingAudit);
+        var service = new CaseIntakeService(failingStore, RoutingConfig.defaults());
+
+        assertThrows(IllegalStateException.class, () -> service.openCases(run.id()));
+        assertEquals(0, count("exception_case"));
+        assertEquals(0, count("case_activity"));
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'CASE_CREATED'", Integer.class));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM outbox_event WHERE event_type = 'RUN_COMPLETED'", Integer.class));
     }
 
     @Test
@@ -171,6 +219,59 @@ class JdbcCaseIntakeStoreIT {
         assertThrows(RunRejectedException.class, () -> intake(RoutingConfig.defaults()).openCases(404));
     }
 
+    @Test
+    void runEventIntakeIsIdempotentAndRejectsAnEventIdCollision() {
+        RunHeader run = aCompletedRunWithAMissingLedgerEntry();
+        java.util.UUID eventId = java.util.UUID.randomUUID();
+
+        JdbcRunEventProcessor processor = new JdbcRunEventProcessor(
+                dataSource, id -> intake(RoutingConfig.defaults()).openCases(id));
+
+        assertTrue(processor.process(eventId, run.id()));
+        int casesAfterFirstDelivery = count("exception_case");
+        int activitiesAfterFirstDelivery = count("case_activity");
+        int outboxAfterFirstDelivery = count("outbox_event");
+
+        assertTrue(casesAfterFirstDelivery > 0);
+        assertEquals(false, processor.process(eventId, run.id()));
+        assertEquals(casesAfterFirstDelivery, count("exception_case"));
+        assertEquals(activitiesAfterFirstDelivery, count("case_activity"));
+        assertEquals(outboxAfterFirstDelivery, count("outbox_event"));
+
+        assertThrows(IllegalStateException.class,
+                () -> processor.process(eventId, run.id() + 1));
+        assertEquals(casesAfterFirstDelivery, count("exception_case"));
+    }
+
+    @Test
+    void failedRunEventIntakeRollsBackMarkerCasesActivitiesAndCaseEvents() {
+        RunHeader run = aCompletedRunWithAMissingLedgerEntry();
+        java.util.UUID eventId = java.util.UUID.randomUUID();
+        int outboxBefore = count("outbox_event");
+
+        JdbcRunEventProcessor failing = new JdbcRunEventProcessor(dataSource, id -> {
+            intake(RoutingConfig.defaults()).openCases(id);
+            throw new IllegalStateException("simulated failure after intake");
+        });
+
+        assertThrows(IllegalStateException.class, () -> failing.process(eventId, run.id()));
+
+        assertEquals(0, count("exception_case"));
+        assertEquals(0, count("case_activity"));
+        assertEquals(outboxBefore, count("outbox_event"));
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT count(*) FROM processed_run_event WHERE event_id = ?",
+                Integer.class, eventId));
+
+        JdbcRunEventProcessor retry = new JdbcRunEventProcessor(
+                dataSource, id -> intake(RoutingConfig.defaults()).openCases(id));
+
+        assertTrue(retry.process(eventId, run.id()));
+        assertTrue(count("exception_case") > 0);
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM processed_run_event WHERE event_id = ?",
+                Integer.class, eventId));
+    }
     private static CaseIntakeService intake(RoutingConfig config) {
         return new CaseIntakeService(intakeStore, config);
     }
