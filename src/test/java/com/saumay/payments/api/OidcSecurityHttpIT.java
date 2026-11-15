@@ -293,6 +293,184 @@ class OidcSecurityHttpIT {
     }
 
     @Test
+    void oidcApprovalUsesVerifiedMakerAndCheckerIdentity() throws Exception {
+        String suffix = java.util.UUID.randomUUID().toString();
+
+        String admin = token(
+                trustedKey, ISSUER, AUDIENCE, "approval-admin",
+                List.of("ADMIN"), Instant.now().plusSeconds(600));
+        String lead = token(
+                trustedKey, ISSUER, AUDIENCE, "approval-lead",
+                List.of("TEAM_LEAD"), Instant.now().plusSeconds(600));
+        String analyst = token(
+                trustedKey, ISSUER, AUDIENCE, "approval-analyst",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+        String maker = token(
+                trustedKey, ISSUER, AUDIENCE, "approval-maker",
+                List.of("CONTROLLER"), Instant.now().plusSeconds(600));
+        String checker = token(
+                trustedKey, ISSUER, AUDIENCE, "approval-checker",
+                List.of("CONTROLLER"), Instant.now().plusSeconds(600));
+
+        String statement = String.join("\n",
+                CSV_HEADER,
+                "ACC-1,,2026-10-09,20000.00,GBP,OIDC-" + suffix + ",Acme,payment",
+                "ACC-1,,2026-10-09,21000.00,GBP,LEGACY-" + suffix + ",Acme,payment");
+        String ledger = String.join("\n",
+                CSV_HEADER,
+                "ACC-1,,2026-10-09,1.00,GBP,OTHER-" + suffix + ",Other,fee");
+
+        HttpResponse<String> statements = request(
+                "POST", "/api/v1/ingestions/statements",
+                admin, null, "text/csv", statement);
+        assertEquals(201, statements.statusCode(), statements.body());
+
+        HttpResponse<String> ledgerResponse = request(
+                "POST", "/api/v1/ingestions/ledger",
+                admin, null, "text/csv", ledger);
+        assertEquals(201, ledgerResponse.statusCode(), ledgerResponse.body());
+
+        long statementId = number(statements.body(), "ingestionId");
+        String runBody = "{\"businessDate\":\"2026-10-09\","
+                + "\"statementIngestionIds\":[" + statementId + "]}";
+
+        HttpResponse<String> run = request(
+                "POST", "/api/v1/reconciliations/runs",
+                admin, null, "application/json", runBody);
+        assertEquals(201, run.statusCode(), run.body());
+
+        long runId = number(run.body(), "id");
+        HttpResponse<String> intake = request(
+                "POST", "/api/v1/reconciliations/runs/" + runId + "/exceptions",
+                admin, null, null, null);
+        assertEquals(200, intake.statusCode(), intake.body());
+
+        Long caseId = jdbc.queryForObject(
+                "SELECT id FROM exception_case"
+                        + " WHERE origin_run_id = ?"
+                        + " AND kind = 'MISSING_LEDGER' AND amount_minor = ?",
+                Long.class, runId, 2_000_000L);
+        assertTrue(caseId != null, "The run must create the OIDC test case");
+
+        Long legacyCaseId = jdbc.queryForObject(
+                "SELECT id FROM exception_case"
+                        + " WHERE origin_run_id = ?"
+                        + " AND kind = 'MISSING_LEDGER' AND amount_minor = ?",
+                Long.class, runId, 2_100_000L);
+        assertTrue(legacyCaseId != null, "The run must create the legacy test case");
+
+        long version = jdbc.queryForObject(
+                "SELECT version FROM exception_case WHERE id = ?",
+                Long.class, caseId);
+
+        HttpResponse<String> assigned = request(
+                "POST", "/api/v1/exceptions/" + caseId + "/assign",
+                lead, "spoofed-actor", "application/json",
+                "{\"expectedVersion\":" + version
+                        + ",\"owner\":\"review-team\",\"reason\":\"review\"}");
+        assertEquals(200, assigned.statusCode(), assigned.body());
+
+        version = jdbc.queryForObject(
+                "SELECT version FROM exception_case WHERE id = ?",
+                Long.class, caseId);
+
+        HttpResponse<String> investigating = request(
+                "POST", "/api/v1/exceptions/" + caseId + "/investigate",
+                analyst, "spoofed-actor", "application/json",
+                "{\"expectedVersion\":" + version + "}");
+        assertEquals(200, investigating.statusCode(), investigating.body());
+
+        version = jdbc.queryForObject(
+                "SELECT version FROM exception_case WHERE id = ?",
+                Long.class, caseId);
+
+        HttpResponse<String> submitted = request(
+                "POST", "/api/v1/exceptions/" + caseId + "/resolve",
+                maker, "spoofed-maker", "application/json",
+                "{\"expectedVersion\":" + version
+                        + ",\"action\":\"WRITE_OFF\",\"reason\":\"reviewed item\"}");
+        assertEquals(202, submitted.statusCode(), submitted.body());
+
+        long approvalId = number(submitted.body(), "id");
+        String makerId = OidcActorId.fromVerifiedClaims(ISSUER, "approval-maker");
+        String checkerId = OidcActorId.fromVerifiedClaims(ISSUER, "approval-checker");
+
+        assertEquals(makerId, jdbc.queryForObject(
+                "SELECT maker FROM approval_request WHERE id = ?",
+                String.class, approvalId));
+        assertEquals("OIDC", jdbc.queryForObject(
+                "SELECT maker_identity_scheme FROM approval_request WHERE id = ?",
+                String.class, approvalId));
+        assertEquals(ISSUER, jdbc.queryForObject(
+                "SELECT maker_issuer FROM approval_request WHERE id = ?",
+                String.class, approvalId));
+
+        HttpResponse<String> selfApproval = request(
+                "POST", "/api/v1/approvals/" + approvalId + "/approve",
+                maker, checkerId, "application/json", "{}");
+        assertEquals(403, selfApproval.statusCode(), selfApproval.body());
+        assertTrue(selfApproval.body().contains("SEPARATION_OF_DUTIES_VIOLATION"),
+                selfApproval.body());
+
+        HttpResponse<String> selfRejection = request(
+                "POST", "/api/v1/approvals/" + approvalId + "/reject",
+                maker, checkerId, "application/json", "{\"note\":\"no\"}");
+        assertEquals(403, selfRejection.statusCode(), selfRejection.body());
+        assertTrue(selfRejection.body().contains("SEPARATION_OF_DUTIES_VIOLATION"),
+                selfRejection.body());
+
+        assertEquals("PENDING", jdbc.queryForObject(
+                "SELECT status FROM approval_request WHERE id = ?",
+                String.class, approvalId));
+        assertEquals(2, jdbc.queryForObject(
+                "SELECT count(*) FROM audit_event"
+                        + " WHERE entity_type = 'approval_request'"
+                        + " AND entity_id = ? AND action = 'APPROVAL_DENIED'",
+                Integer.class, Long.toString(approvalId)));
+
+        HttpResponse<String> forbiddenRole = request(
+                "POST", "/api/v1/approvals/" + approvalId + "/approve",
+                analyst, null, "application/json", "{}");
+        assertEquals(403, forbiddenRole.statusCode(), forbiddenRole.body());
+
+        HttpResponse<String> approved = request(
+                "POST", "/api/v1/approvals/" + approvalId + "/approve",
+                checker, makerId, "application/json", "{\"note\":\"evidence seen\"}");
+        assertEquals(200, approved.statusCode(), approved.body());
+
+        assertEquals("APPROVED", jdbc.queryForObject(
+                "SELECT status FROM approval_request WHERE id = ?",
+                String.class, approvalId));
+        assertEquals(checkerId, jdbc.queryForObject(
+                "SELECT checker FROM approval_request WHERE id = ?",
+                String.class, approvalId));
+        assertEquals("RESOLVED", jdbc.queryForObject(
+                "SELECT status FROM exception_case WHERE id = ?",
+                String.class, caseId));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM line_claim"
+                        + " WHERE case_id = ? AND source = 'WRITE_OFF' AND action = 'CLAIM'",
+                Integer.class, caseId));
+
+        Long legacyApprovalId = jdbc.queryForObject(
+                "INSERT INTO approval_request"
+                        + " (case_id, action, amount_minor, currency, reason, maker)"
+                        + " VALUES (?, 'WRITE_OFF', 2100000, 'GBP', 'legacy request', 'legacy-maker')"
+                        + " RETURNING id",
+                Long.class, legacyCaseId);
+        assertTrue(legacyApprovalId != null);
+
+        HttpResponse<String> legacyDecision = request(
+                "POST", "/api/v1/approvals/" + legacyApprovalId + "/approve",
+                checker, null, "application/json", "{}");
+        assertEquals(409, legacyDecision.statusCode(), legacyDecision.body());
+        assertTrue(legacyDecision.body().contains("IDENTITY_MIGRATION_REQUIRED"),
+                legacyDecision.body());
+        assertEquals("PENDING", jdbc.queryForObject(
+                "SELECT status FROM approval_request WHERE id = ?",
+                String.class, legacyApprovalId));
+    }
+    @Test
     void everyListedEndpointEnforcesItsRoleMatrix() throws Exception {
         List<String> allRoles = List.of(
                 "ADMIN", "ANALYST", "TEAM_LEAD", "CONTROLLER", "AUDITOR");

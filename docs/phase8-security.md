@@ -1,5 +1,10 @@
 # Phase 8: authentication and authorization
 
+> Current status: the OIDC approval path carries verified issuer provenance.
+> The historical sections below describe earlier checkpoints; where they say
+> that every OIDC decision is blocked or that provenance is not wired, that
+> statement has been superseded by the "OIDC approval provenance" section.
+
 Status: in progress. Authentication and RBAC are not yet enforced across
 the API.
 
@@ -208,3 +213,41 @@ audit append must roll back the approval, its provenance and activity.
 
 This is persistence wiring only. The HTTP approval path does not yet provide
 OIDC provenance, and the temporary OIDC decision block remains active.
+
+
+## OIDC approval provenance
+
+The authenticated JWT mapper attaches the verified issuer to the actor. New
+approval submissions persist that provenance with the approval transaction.
+A pending approval can be decided only when maker and checker provenance match:
+legacy with legacy, or OIDC with the exact same issuer. Missing provenance and
+mixed schemes or issuers fail closed with `IDENTITY_MIGRATION_REQUIRED`.
+
+Within a compatible identity context, the existing maker-checker rule rejects
+the same actor and records the denied attempt. Compatibility of issuer and
+subject identifiers is only a prerequisite: deployment must guarantee that
+one person has one stable subject across all clients and audiences allowed to
+use this API. Different subjects do not establish separation of duties if the
+identity provider can issue multiple subjects to the same person.
+
+Legacy approvals are not automatically linked to OIDC users. They require a
+separately designed and verified identity migration. Provenance mismatch
+refusals do not currently create a separate denied-attempt audit event.
+
+Service-level tests cover submission provenance, same-actor denial, compatible
+and incompatible issuers, mixed legacy/OIDC identities, and missing
+provenance. Real-HTTP approval workflow tests remain required before the
+Phase 8 security gate. The `dev` profile is unsecured and is not suitable for
+production.
+
+## OIDC approval HTTP verification
+
+`OidcSecurityHttpIT` includes an approval workflow using signed JWTs, the
+actual HTTP security chain, and PostgreSQL. It checks persisted maker
+provenance, self-approval and self-rejection, spoofed actor headers, approval
+by a different controller, and refusal to decide a legacy approval using an
+OIDC identity.
+
+Run the test and the full Maven verification gate before treating this
+checkpoint as verified. The stable-subject requirement and other Phase 8
+limitations described above remain applicable.

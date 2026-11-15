@@ -49,7 +49,7 @@ public class ControlledResolutionController {
         Actor actor = actors.resolve(header);
         actor.require(MAKERS);
         ControlledResolutionService.Outcome outcome = service.resolve(id, version(body.expectedVersion()), actor.id(),
-                action(body.action()), required(body.reason(), "reason"));
+                action(body.action()), required(body.reason(), "reason"), actor.provenance());
         if (outcome.pendingApproval()) {
             return ResponseEntity.accepted().location(URI.create("/api/v1/approvals/" + outcome.approvalId()))
                     .body(ApprovalDtos.ApprovalDto.from(service.get(outcome.approvalId())));
@@ -70,7 +70,7 @@ public class ControlledResolutionController {
             @RequestBody(required = false) ApprovalDtos.DecisionRequest body) {
         Actor actor = actors.resolve(header);
         actor.require(CHECKERS);
-        return ApprovalDtos.ApprovalDto.from(service.approve(id, actor.id(), body == null ? null : body.note()));
+        return ApprovalDtos.ApprovalDto.from(service.approve(id, actor.id(), body == null ? null : body.note(), actor.provenance()));
     }
 
     @PostMapping("/approvals/{id}/reject")
@@ -79,7 +79,7 @@ public class ControlledResolutionController {
             @RequestBody ApprovalDtos.DecisionRequest body) {
         Actor actor = actors.resolve(header);
         actor.require(CHECKERS);
-        return ApprovalDtos.ApprovalDto.from(service.reject(id, actor.id(), required(body.note(), "note")));
+        return ApprovalDtos.ApprovalDto.from(service.reject(id, actor.id(), required(body.note(), "note"), actor.provenance()));
     }
 
     private static ControlledAction action(String value) {

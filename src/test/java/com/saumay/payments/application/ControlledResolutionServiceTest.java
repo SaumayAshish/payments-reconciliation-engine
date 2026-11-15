@@ -254,6 +254,95 @@ class ControlledResolutionServiceTest {
         assertEquals("APPROVAL_ALREADY_DECIDED",
                 codeOf(() -> service.approve(1, "oidc-" + "c".repeat(64), null)));
     }
+    @Test
+    void oidcSubmissionStoresTheVerifiedIssuer() {
+        approvals.facts = new CaseFacts(CaseStatus.INVESTIGATING, 3, OVER, "GBP");
+        ApprovalStore.IdentityProvenance provenance =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example");
+
+        service.resolve(7, 3, "oidc-" + "a".repeat(64), ControlledAction.WRITE_OFF,
+                "stale item", provenance);
+
+        assertEquals(provenance, approvals.submitted.get(0).makerProvenance());
+    }
+
+    @Test
+    void sameOidcMakerCannotApproveOrRejectAndBothAttemptsAreRecorded() {
+        String maker = "oidc-" + "a".repeat(64);
+        ApprovalStore.IdentityProvenance provenance =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example");
+        approvals.makerProvenance = provenance;
+        approvals.requests.put(1L, pendingFor(maker));
+
+        assertEquals("SEPARATION_OF_DUTIES_VIOLATION",
+                codeOf(() -> service.approve(1, maker, null, provenance)));
+        assertEquals("SEPARATION_OF_DUTIES_VIOLATION",
+                codeOf(() -> service.reject(1, maker, "no", provenance)));
+
+        assertEquals(2, approvals.denied.size());
+        assertTrue(approvals.approved.isEmpty());
+        assertTrue(approvals.rejected.isEmpty());
+        assertEquals(ApprovalStatus.PENDING, approvals.requests.get(1L).status());
+    }
+
+    @Test
+    void differentOidcCheckerWithSameIssuerCanApprove() {
+        ApprovalStore.IdentityProvenance provenance =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example");
+        approvals.makerProvenance = provenance;
+        approvals.requests.put(1L, pendingFor("oidc-" + "a".repeat(64)));
+
+        ApprovalRequest decided = service.approve(
+                1, "oidc-" + "b".repeat(64), "reviewed", provenance);
+
+        assertEquals(ApprovalStatus.APPROVED, decided.status());
+        assertEquals(1, approvals.approved.size());
+    }
+
+    @Test
+    void differentIssuerCannotDecideAnOidcApproval() {
+        approvals.makerProvenance =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer-one.example");
+        approvals.requests.put(1L, pendingFor("oidc-" + "a".repeat(64)));
+        ApprovalStore.IdentityProvenance checker =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer-two.example");
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.approve(1, "oidc-" + "b".repeat(64), null, checker)));
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.reject(1, "oidc-" + "b".repeat(64), "no", checker)));
+        assertTrue(approvals.approved.isEmpty());
+        assertTrue(approvals.rejected.isEmpty());
+    }
+
+    @Test
+    void legacyAndOidcProvenanceCannotBeMixed() {
+        ApprovalStore.IdentityProvenance oidc =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example");
+        approvals.requests.put(1L, pendingFor("legacy-maker"));
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.approve(1, "oidc-" + "b".repeat(64), null, oidc)));
+
+        approvals.makerProvenance = oidc;
+        approvals.requests.put(1L, pendingFor("oidc-" + "a".repeat(64)));
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.approve(
+                        1, "legacy-checker", null, ApprovalStore.IdentityProvenance.legacy())));
+        assertTrue(approvals.approved.isEmpty());
+    }
+
+    @Test
+    void missingMakerProvenanceFailsClosed() {
+        approvals.makerProvenance = null;
+        approvals.requests.put(1L, pendingFor("legacy-maker"));
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.approve(1, "legacy-checker", null)));
+        assertTrue(approvals.approved.isEmpty());
+    }
+
     private static final class FakeApprovals implements ApprovalStore {
         CaseFacts facts = new CaseFacts(CaseStatus.INVESTIGATING, 3, OVER, "GBP");
         final Map<Long, ApprovalRequest> requests = new HashMap<>();
@@ -261,6 +350,7 @@ class ControlledResolutionServiceTest {
         final List<Approval> approved = new ArrayList<>();
         final List<Rejection> rejected = new ArrayList<>();
         final List<DeniedAttempt> denied = new ArrayList<>();
+        IdentityProvenance makerProvenance = IdentityProvenance.legacy();
         SubmitOutcome submitOutcome = SubmitOutcome.SUBMITTED;
         DecisionOutcome decisionOutcome = DecisionOutcome.DECIDED;
 
@@ -277,7 +367,7 @@ class ControlledResolutionServiceTest {
         @Override
         public Optional<IdentityProvenance> findMakerProvenance(long approvalId) {
             return requests.containsKey(approvalId)
-                    ? Optional.of(IdentityProvenance.legacy())
+                    ? Optional.ofNullable(makerProvenance)
                     : Optional.empty();
         }
         @Override

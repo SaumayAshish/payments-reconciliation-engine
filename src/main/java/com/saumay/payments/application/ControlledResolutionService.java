@@ -3,6 +3,8 @@ package com.saumay.payments.application;
 import com.saumay.payments.application.ApprovalStore.Approval;
 import com.saumay.payments.application.ApprovalStore.CaseFacts;
 import com.saumay.payments.application.ApprovalStore.DeniedAttempt;
+import com.saumay.payments.application.ApprovalStore.IdentityProvenance;
+import com.saumay.payments.application.ApprovalStore.IdentityScheme;
 import com.saumay.payments.application.ApprovalStore.Rejection;
 import com.saumay.payments.application.ApprovalStore.SubmitResult;
 import com.saumay.payments.application.ApprovalStore.Submission;
@@ -67,6 +69,12 @@ public final class ControlledResolutionService {
     }
 
     public Outcome resolve(long caseId, long expectedVersion, String actor, ControlledAction action, String reason) {
+        return resolve(caseId, expectedVersion, actor, action, reason, IdentityProvenance.legacy());
+    }
+
+    public Outcome resolve(long caseId, long expectedVersion, String actor, ControlledAction action, String reason,
+            IdentityProvenance provenance) {
+        Objects.requireNonNull(provenance, "provenance");
         Objects.requireNonNull(action, "action");
         String by = requiredText(actor, MAX_NAME, "actor");
         String why = requiredText(reason, MAX_REASON, "reason");
@@ -97,7 +105,7 @@ public final class ControlledResolutionService {
         ApprovalRequest request = ApprovalRequest.pending(caseId, action, facts.amountMinor(), facts.currency(), why,
                 by, now, snapshot.version());
         SubmitResult result = approvals.submit(
-                new Submission(request, expectedVersion, ApprovalAudit.requested(request)), now);
+                new Submission(request, expectedVersion, ApprovalAudit.requested(request), provenance), now);
         switch (result.outcome()) {
             case SUBMITTED -> {
                 return new Outcome(null, result.id());
@@ -109,10 +117,15 @@ public final class ControlledResolutionService {
     }
 
     public ApprovalRequest approve(long approvalId, String checker, String note) {
+        return approve(approvalId, checker, note, IdentityProvenance.legacy());
+    }
+
+    public ApprovalRequest approve(long approvalId, String checker, String note, IdentityProvenance provenance) {
+        Objects.requireNonNull(provenance, "provenance");
         String by = requiredText(checker, MAX_NAME, "checker");
         String text = optionalText(note, MAX_REASON, "note");
         ApprovalRequest request = load(approvalId);
-        blockOidcDecisionUntilIdentityMigration(request, by);
+        requireCompatibleProvenance(request, by, provenance);
         Instant now = clock.instant();
         ApprovalRequest decided = decide(request, by, now, () -> request.approve(by, now, text));
 
@@ -133,10 +146,15 @@ public final class ControlledResolutionService {
     }
 
     public ApprovalRequest reject(long approvalId, String checker, String note) {
+        return reject(approvalId, checker, note, IdentityProvenance.legacy());
+    }
+
+    public ApprovalRequest reject(long approvalId, String checker, String note, IdentityProvenance provenance) {
+        Objects.requireNonNull(provenance, "provenance");
         String by = requiredText(checker, MAX_NAME, "checker");
         String why = requiredText(note, MAX_REASON, "note");
         ApprovalRequest request = load(approvalId);
-        blockOidcDecisionUntilIdentityMigration(request, by);
+        requireCompatibleProvenance(request, by, provenance);
         Instant now = clock.instant();
         ApprovalRequest decided = decide(request, by, now, () -> request.reject(by, now, why));
         switch (approvals.reject(new Rejection(decided, ApprovalAudit.decided(request, decided)), now)) {
@@ -165,18 +183,34 @@ public final class ControlledResolutionService {
     }
 
     /**
-     * Temporary fail-closed boundary during the identity migration.
-     *
-     * Approval rows do not yet record trusted identity provenance. Therefore
-     * an OIDC checker cannot safely decide any pending approval until that
-     * provenance and its migration rules are implemented.
+     * Allows identity comparison only within the same trusted identity scheme
+     * and, for OIDC, the exact same issuer. Historical legacy identities are
+     * not automatically mapped to OIDC subjects.
      */
-    private static void blockOidcDecisionUntilIdentityMigration(ApprovalRequest request, String checker) {
-        if (request.status() == com.saumay.payments.domain.approval.ApprovalStatus.PENDING
-                && checker.matches("oidc-[0-9a-f]{64}")) {
-            throw new ApprovalRejectedException(ApprovalErrorCode.IDENTITY_MIGRATION_REQUIRED,
-                    "Approval decisions require identity migration before OIDC can be enabled");
+    private void requireCompatibleProvenance(ApprovalRequest request, String checker,
+            IdentityProvenance checkerProvenance) {
+        if (request.status() != com.saumay.payments.domain.approval.ApprovalStatus.PENDING) {
+            return;
         }
+
+        IdentityProvenance makerProvenance = approvals.findMakerProvenance(request.id())
+                .orElseThrow(ControlledResolutionService::identityMigrationRequired);
+
+        if (!makerProvenance.equals(checkerProvenance)) {
+            throw identityMigrationRequired();
+        }
+
+        // A legacy caller cannot claim the reserved OIDC-shaped namespace.
+        // This check never authenticates an OIDC actor.
+        if (checkerProvenance.scheme() == IdentityScheme.LEGACY
+                && checker.matches("oidc-[0-9a-f]{64}")) {
+            throw identityMigrationRequired();
+        }
+    }
+
+    private static ApprovalRejectedException identityMigrationRequired() {
+        return new ApprovalRejectedException(ApprovalErrorCode.IDENTITY_MIGRATION_REQUIRED,
+                "Approval identities cannot be safely compared; identity migration is required");
     }
     private ApprovalRequest load(long approvalId) {
         return approvals.find(approvalId).orElseThrow(() -> new ApprovalRejectedException(

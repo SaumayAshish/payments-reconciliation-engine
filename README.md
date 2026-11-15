@@ -97,3 +97,19 @@ cases in the same database transaction as its processed-event marker.
 Event delivery is disabled by default. See [Phase 7 events](docs/phase7-events.md)
 for configuration, retry behavior, operational limits and test coverage.
 The existing manual case-intake endpoint remains available.
+
+
+### Phase 8 approval identity checkpoint
+
+OIDC approval submissions carry verified issuer provenance. Approval
+decisions require compatible maker and checker provenance; historical legacy
+identities are not automatically mapped to OIDC subjects. A stable
+one-person/one-subject identity-provider contract is required. The real-HTTP
+approval workflow and remaining Phase 8 security work are still outstanding.
+See `docs/phase8-security.md`.
+
+### OIDC approval HTTP test
+
+The OIDC integration suite includes a signed-token maker-checker workflow.
+Run the suite and the full Maven verification gate to validate the current
+checkout. Phase 8 remains in progress; see `docs/phase8-security.md`.

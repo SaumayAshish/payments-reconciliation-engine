@@ -1,5 +1,6 @@
 package com.saumay.payments.api;
 
+import com.saumay.payments.application.ApprovalStore.IdentityProvenance;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
@@ -44,7 +45,7 @@ public final class VerifiedJwtActorMapper {
             throw accessDenied();
         }
 
-        return new Actor(OidcActorId.fromVerifiedClaims(issuer, subject), role);
+        return new Actor(OidcActorId.fromVerifiedClaims(issuer, subject), role, IdentityProvenance.oidc(issuer));
     }
 
     private static ApiException authenticationRequired() {
