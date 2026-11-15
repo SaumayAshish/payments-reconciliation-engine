@@ -221,6 +221,39 @@ class ControlledResolutionServiceTest {
         assertTrue(approvals.approved.isEmpty());
     }
 
+    @Test
+    void oidcCheckerCannotApproveUntilIdentityMigrationIsImplemented() {
+        approvals.requests.put(1L, pendingFor("legacy-maker"));
+        String checker = "oidc-" + "a".repeat(64);
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.approve(1, checker, null)));
+
+        assertEquals(ApprovalStatus.PENDING, approvals.requests.get(1L).status());
+        assertTrue(approvals.approved.isEmpty());
+        assertNull(cases.resolved);
+    }
+
+    @Test
+    void oidcCheckerCannotRejectUntilIdentityMigrationIsImplemented() {
+        approvals.requests.put(1L, pendingFor("legacy-maker"));
+        String checker = "oidc-" + "b".repeat(64);
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.reject(1, checker, "reason")));
+
+        assertEquals(ApprovalStatus.PENDING, approvals.requests.get(1L).status());
+        assertTrue(approvals.rejected.isEmpty());
+    }
+
+    @Test
+    void alreadyDecidedApprovalKeepsItsExistingConflictResponse() {
+        approvals.requests.put(1L, pendingFor("carol"));
+        service.approve(1, "dave", null);
+
+        assertEquals("APPROVAL_ALREADY_DECIDED",
+                codeOf(() -> service.approve(1, "oidc-" + "c".repeat(64), null)));
+    }
     private static final class FakeApprovals implements ApprovalStore {
         CaseFacts facts = new CaseFacts(CaseStatus.INVESTIGATING, 3, OVER, "GBP");
         final Map<Long, ApprovalRequest> requests = new HashMap<>();
@@ -241,6 +274,12 @@ class ControlledResolutionServiceTest {
             return Optional.ofNullable(requests.get(approvalId));
         }
 
+        @Override
+        public Optional<IdentityProvenance> findMakerProvenance(long approvalId) {
+            return requests.containsKey(approvalId)
+                    ? Optional.of(IdentityProvenance.legacy())
+                    : Optional.empty();
+        }
         @Override
         public Optional<ApprovalRequest> findPendingForCase(long caseId) {
             return requests.values().stream()

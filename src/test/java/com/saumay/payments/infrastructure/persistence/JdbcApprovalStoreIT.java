@@ -3,6 +3,7 @@ package com.saumay.payments.infrastructure.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.saumay.payments.application.ApprovalStore;
 import com.saumay.payments.application.ApprovalStore.Approval;
 import com.saumay.payments.application.ApprovalStore.DecisionOutcome;
 import com.saumay.payments.application.ApprovalStore.DeniedAttempt;
@@ -108,6 +109,66 @@ class JdbcApprovalStoreIT {
         return jdbc.queryForObject("SELECT status FROM exception_case WHERE id = ?", String.class, caseId);
     }
 
+    @Test
+    void provenanceIsStoredWithTheApprovalTransaction() {
+        long caseId = investigatingCase();
+
+        ApprovalStore.IdentityProvenance provenance =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example.test");
+
+        Submission submission = new Submission(
+                request(caseId),
+                0,
+                id -> new AuditNote("APPROVAL_REQUESTED", "{}", "{}"),
+                provenance);
+
+        SubmitResult result = store.submit(submission, AT);
+
+        assertEquals(SubmitOutcome.SUBMITTED, result.outcome());
+        assertEquals(provenance, store.findMakerProvenance(result.id()).orElseThrow());
+        assertEquals(List.of("APPROVAL_REQUESTED"), auditActions());
+        assertEquals(List.of("APPROVAL_REQUESTED"), activityTypes(caseId));
+    }
+
+    @Test
+    void existingSubmissionConstructorStoresLegacyProvenance() {
+        long caseId = investigatingCase();
+        long approvalId = submitted(caseId).id();
+
+        assertEquals(
+                ApprovalStore.IdentityProvenance.legacy(),
+                store.findMakerProvenance(approvalId).orElseThrow());
+    }
+
+    @Test
+    void failedAuditRollsBackApprovalAndProvenance() {
+        long caseId = investigatingCase();
+
+        com.saumay.payments.application.AuditLog failingAudit =
+                org.mockito.Mockito.mock(com.saumay.payments.application.AuditLog.class);
+
+        org.mockito.Mockito.when(
+                failingAudit.append(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("simulated audit failure"));
+
+        JdbcApprovalStore failingStore = new JdbcApprovalStore(
+                java.util.Objects.requireNonNull(jdbc.getDataSource()),
+                failingAudit);
+
+        Submission submission = new Submission(
+                request(caseId),
+                0,
+                id -> new AuditNote("APPROVAL_REQUESTED", "{}", "{}"),
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example.test"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> failingStore.submit(submission, AT));
+
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT count(*) FROM approval_request", Integer.class));
+        assertTrue(activityTypes(caseId).isEmpty());
+    }
     @Test
     void submittingWritesTheRequestItsTimelineEntryAndOneAuditEvent() {
         long caseId = investigatingCase();

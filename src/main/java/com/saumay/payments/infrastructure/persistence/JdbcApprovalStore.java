@@ -42,7 +42,8 @@ public final class JdbcApprovalStore implements ApprovalStore {
             "SELECT " + COLUMNS + " FROM approval_request WHERE case_id = ? AND status = 'PENDING'";
     private static final String INSERT_APPROVAL =
             "INSERT INTO approval_request (case_id, action, amount_minor, currency, reason, maker, requested_at,"
-                    + " config_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
+                    + " config_version, maker_identity_scheme, maker_issuer)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
     private static final String DECIDE =
             "UPDATE approval_request SET status = ?, checker = ?, decided_at = ?, decision_note = ?"
                     + " WHERE id = ? AND status = 'PENDING'";
@@ -86,6 +87,16 @@ public final class JdbcApprovalStore implements ApprovalStore {
     }
 
     @Override
+    public Optional<IdentityProvenance> findMakerProvenance(long approvalId) {
+        return jdbc.query(
+                "SELECT maker_identity_scheme, maker_issuer"
+                        + " FROM approval_request WHERE id = ?",
+                (rs, row) -> new IdentityProvenance(
+                        IdentityScheme.valueOf(rs.getString("maker_identity_scheme")),
+                        rs.getString("maker_issuer")),
+                approvalId).stream().findFirst();
+    }
+    @Override
     public Optional<ApprovalRequest> findPendingForCase(long caseId) {
         return jdbc.query(SELECT_PENDING, REQUEST, caseId).stream().findFirst();
     }
@@ -108,7 +119,8 @@ public final class JdbcApprovalStore implements ApprovalStore {
         }
         OffsetDateTime when = OffsetDateTime.ofInstant(r.requestedAt(), ZoneOffset.UTC);
         long id = Objects.requireNonNull(jdbc.queryForObject(INSERT_APPROVAL, Long.class, r.caseId(),
-                r.action().name(), r.amountMinor(), r.currency(), r.reason(), r.maker(), when, r.configVersion()));
+                r.action().name(), r.amountMinor(), r.currency(), r.reason(), r.maker(), when, r.configVersion(),
+                s.makerProvenance().scheme().name(), s.makerProvenance().issuer()));
         activity(r.caseId(), "APPROVAL_REQUESTED", r.maker(),
                 r.action() + " of " + r.amountMinor() + " " + r.currency() + " needs approval: " + r.reason(), when);
         appendAudit(id, r.maker(), s.audit().apply(id), at);

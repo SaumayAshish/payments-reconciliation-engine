@@ -54,7 +54,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     static HttpStatus statusFor(ApprovalErrorCode code) {
         return switch (code) {
             case APPROVAL_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case APPROVAL_PENDING, APPROVAL_ALREADY_DECIDED -> HttpStatus.CONFLICT;
+            case APPROVAL_PENDING, APPROVAL_ALREADY_DECIDED, IDENTITY_MIGRATION_REQUIRED -> HttpStatus.CONFLICT;
             case SEPARATION_OF_DUTIES_VIOLATION -> HttpStatus.FORBIDDEN;
             case CONTROLLED_ACTION_NOT_ALLOWED -> HttpStatus.UNPROCESSABLE_CONTENT;
         };

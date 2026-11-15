@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 /** Outside the dev profile nobody can act until real authentication exists (Phase 8): the safe default. */
 @Component
-@Profile("!dev")
+@Profile("!dev & !oidc")
 public final class FailClosedActorContext implements ActorContext {
 
     @Override

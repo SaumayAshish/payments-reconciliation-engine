@@ -143,10 +143,7 @@ public class ExceptionController {
     }
 
     private static String actor(String header) {
-        if (header == null || header.isBlank()) {
-            throw invalid("ACTOR_REQUIRED", "The " + ACTOR_HEADER + " header is required");
-        }
-        return header.trim();
+        return ExceptionActorResolver.resolve(header);
     }
 
     private static long version(Long expectedVersion) {

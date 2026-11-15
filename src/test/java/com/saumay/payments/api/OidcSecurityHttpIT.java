@@ -1,0 +1,541 @@
+package com.saumay.payments.api;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import com.saumay.payments.PaymentsApplication;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpRequest.BodyPublishers;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
+import java.time.Instant;
+import java.util.Date;
+import java.util.List;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+/**
+ * Exercises the actual OIDC filter chain over HTTP using a local JWK endpoint,
+ * generated RSA keys and PostgreSQL. All data and keys are synthetic.
+ */
+class OidcSecurityHttpIT {
+
+    private static final String ISSUER = "https://issuer.example.test";
+    private static final String AUDIENCE = "payments-api";
+    private static final String KEY_ID = "oidc-http-test-key";
+
+    private static final String CSV_HEADER =
+            "account,booking_date,value_date,amount,currency,reference,counterparty,narrative";
+
+    private static PostgreSQLContainer postgres;
+    private static HttpServer jwkServer;
+    private static ConfigurableApplicationContext context;
+    private static KeyPair trustedKey;
+    private static KeyPair otherKey;
+    private static HttpClient http;
+    private static JdbcTemplate jdbc;
+    private static String base;
+
+    @BeforeAll
+    static void start() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        trustedKey = generator.generateKeyPair();
+        otherKey = generator.generateKeyPair();
+
+        RSAKey publicJwk = new RSAKey.Builder((RSAPublicKey) trustedKey.getPublic())
+                .keyID(KEY_ID)
+                .build();
+
+        byte[] jwks = new JWKSet(publicJwk).toString()
+                .getBytes(StandardCharsets.UTF_8);
+
+        jwkServer = HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+
+        jwkServer.createContext("/jwks", exchange -> {
+            try {
+                exchange.getResponseHeaders().set(
+                        "Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, jwks.length);
+                try (var output = exchange.getResponseBody()) {
+                    output.write(jwks);
+                }
+            } finally {
+                exchange.close();
+            }
+        });
+
+        jwkServer.start();
+
+        postgres = new PostgreSQLContainer("postgres:17-alpine");
+        postgres.start();
+
+        String jwkSetUri = "http://127.0.0.1:"
+                + jwkServer.getAddress().getPort() + "/jwks";
+
+        context = SpringApplication.run(PaymentsApplication.class,
+                "--server.port=0",
+                "--spring.profiles.active=oidc",
+                "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                "--spring.datasource.username=" + postgres.getUsername(),
+                "--spring.datasource.password=" + postgres.getPassword(),
+                "--payments.security.issuer=" + ISSUER,
+                "--payments.security.audience=" + AUDIENCE,
+                "--payments.security.jwk-set-uri=" + jwkSetUri);
+
+        jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+        http = HttpClient.newHttpClient();
+
+        base = "http://127.0.0.1:"
+                + context.getEnvironment().getProperty("local.server.port");
+    }
+
+    @AfterAll
+    static void stop() {
+        if (context != null) {
+            context.close();
+        }
+        if (postgres != null) {
+            postgres.stop();
+        }
+        if (jwkServer != null) {
+            jwkServer.stop(0);
+        }
+    }
+
+    @Test
+    void missingAndInvalidTokensAreRejected() throws Exception {
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", null, null, null, null).statusCode());
+
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", "not-a-jwt",
+                null, null, null).statusCode());
+
+        String wrongKey = token(
+                otherKey, ISSUER, AUDIENCE, "alice",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", wrongKey,
+                null, null, null).statusCode());
+
+        String wrongIssuer = token(
+                trustedKey, "https://wrong.example.test", AUDIENCE, "alice",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", wrongIssuer,
+                null, null, null).statusCode());
+
+        String wrongAudience = token(
+                trustedKey, ISSUER, "another-api", "alice",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", wrongAudience,
+                null, null, null).statusCode());
+
+        String expired = token(
+                trustedKey, ISSUER, AUDIENCE, "alice",
+                List.of("ANALYST"), Instant.now().minusSeconds(3600));
+
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", expired,
+                null, null, null).statusCode());
+    }
+
+    @Test
+    void validRoleCanReadButCannotPerformAdminOperation() throws Exception {
+        String analyst = token(
+                trustedKey, ISSUER, AUDIENCE, "analyst-user",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        assertEquals(200, request(
+                "GET", "/api/v1/exceptions", analyst,
+                null, null, null).statusCode());
+
+        assertEquals(403, request(
+                "POST", "/api/v1/ingestions/statements", analyst,
+                null, "text/csv", CSV_HEADER).statusCode());
+    }
+
+    @Test
+    void unknownRoleAndUnlistedRouteAreDenied() throws Exception {
+        String unknownRole = token(
+                trustedKey, ISSUER, AUDIENCE, "user",
+                List.of("UNKNOWN"), Instant.now().plusSeconds(600));
+
+        assertEquals(401, request(
+                "GET", "/api/v1/exceptions", unknownRole,
+                null, null, null).statusCode());
+
+        String admin = token(
+                trustedKey, ISSUER, AUDIENCE, "admin-user",
+                List.of("ADMIN"), Instant.now().plusSeconds(600));
+
+        assertEquals(403, request(
+                "GET", "/api/v1/not-a-real-route", admin,
+                null, null, null).statusCode());
+    }
+
+    @Test
+    void actuatorIsRestrictedToAdmin() throws Exception {
+        String analyst = token(
+                trustedKey, ISSUER, AUDIENCE, "analyst-user",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        String admin = token(
+                trustedKey, ISSUER, AUDIENCE, "admin-user",
+                List.of("ADMIN"), Instant.now().plusSeconds(600));
+
+        assertEquals(403, request(
+                "GET", "/actuator/health", analyst,
+                null, null, null).statusCode());
+
+        assertEquals(200, request(
+                "GET", "/actuator/health", admin,
+                null, null, null).statusCode());
+    }
+
+    @Test
+    void spoofedActorHeaderDoesNotChangeStoredCommentAuthor() throws Exception {
+        String admin = token(
+                trustedKey, ISSUER, AUDIENCE, "admin-user",
+                List.of("ADMIN"), Instant.now().plusSeconds(600));
+
+        String analyst = token(
+                trustedKey, ISSUER, AUDIENCE, "real-analyst",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        String statement = String.join("\n",
+                CSV_HEADER,
+                "ACC-1,,2026-10-09,30.00,GBP,ONLY-STATEMENT,Acme,payment");
+
+        String ledger = String.join("\n",
+                CSV_HEADER,
+                "ACC-1,,2026-10-09,10.00,GBP,ONLY-LEDGER,Other,fee");
+
+        HttpResponse<String> statementResponse = request(
+                "POST", "/api/v1/ingestions/statements",
+                admin, null, "text/csv", statement);
+        assertEquals(201, statementResponse.statusCode(), statementResponse.body());
+
+        HttpResponse<String> ledgerResponse = request(
+                "POST", "/api/v1/ingestions/ledger",
+                admin, null, "text/csv", ledger);
+        assertEquals(201, ledgerResponse.statusCode(), ledgerResponse.body());
+
+        long statementId = number(statementResponse.body(), "ingestionId");
+
+        String runBody = "{\"businessDate\":\"2026-10-09\","
+                + "\"statementIngestionIds\":[" + statementId + "]}";
+
+        HttpResponse<String> runResponse = request(
+                "POST", "/api/v1/reconciliations/runs",
+                admin, null, "application/json", runBody);
+        assertEquals(201, runResponse.statusCode(), runResponse.body());
+
+        long runId = number(runResponse.body(), "id");
+
+        HttpResponse<String> intakeResponse = request(
+                "POST", "/api/v1/reconciliations/runs/" + runId + "/exceptions",
+                admin, null, null, null);
+        assertEquals(200, intakeResponse.statusCode(), intakeResponse.body());
+
+        Long caseId = jdbc.queryForObject(
+                "SELECT min(id) FROM exception_case WHERE origin_run_id = ?",
+                Long.class, runId);
+        assertTrue(caseId != null, "The run must produce an exception case");
+
+        HttpResponse<String> comment = request(
+                "POST", "/api/v1/exceptions/" + caseId + "/comments",
+                analyst, "spoofed-admin", "application/json",
+                "{\"body\":\"OIDC actor verification\"}");
+
+        assertEquals(201, comment.statusCode(), comment.body());
+
+        String storedAuthor = jdbc.queryForObject(
+                "SELECT author FROM case_comment WHERE case_id = ?"
+                        + " AND body = ?",
+                String.class, caseId, "OIDC actor verification");
+
+        assertEquals(
+                OidcActorId.fromVerifiedClaims(ISSUER, "real-analyst"),
+                storedAuthor);
+        assertNotEquals("spoofed-admin", storedAuthor);
+    }
+
+    @Test
+    void everyListedEndpointEnforcesItsRoleMatrix() throws Exception {
+        List<String> allRoles = List.of(
+                "ADMIN", "ANALYST", "TEAM_LEAD", "CONTROLLER", "AUDITOR");
+
+        java.util.Map<String, String> tokens = new java.util.HashMap<>();
+        for (String role : allRoles) {
+            tokens.put(role, token(
+                    trustedKey, ISSUER, AUDIENCE, "matrix-" + role,
+                    List.of(role), Instant.now().plusSeconds(600)));
+        }
+
+        List<AccessRule> rules = List.of(
+                rule("POST", "/api/v1/ingestions/statements", "ADMIN"),
+                rule("POST", "/api/v1/ingestions/ledger", "ADMIN"),
+                rule("GET", "/api/v1/ingestions/999999", "ADMIN", "ANALYST", "AUDITOR"),
+
+                rule("POST", "/api/v1/reconciliations/runs", "ADMIN"),
+                rule("GET", "/api/v1/reconciliations/runs/999999",
+                        "ADMIN", "ANALYST", "AUDITOR"),
+                rule("GET", "/api/v1/reconciliations/runs/999999/results",
+                        "ADMIN", "ANALYST", "AUDITOR"),
+                rule("POST", "/api/v1/reconciliations/runs/999999/replay",
+                        "ADMIN", "AUDITOR"),
+                rule("POST", "/api/v1/reconciliations/runs/999999/exceptions",
+                        "ADMIN", "TEAM_LEAD"),
+                rule("POST", "/api/v1/reconciliations/runs/999999/matches/1/unmatch",
+                        "ADMIN", "TEAM_LEAD"),
+
+                rule("GET", "/api/v1/exceptions",
+                        "ADMIN", "ANALYST", "TEAM_LEAD", "CONTROLLER", "AUDITOR"),
+                rule("GET", "/api/v1/exceptions/999999",
+                        "ADMIN", "ANALYST", "TEAM_LEAD", "CONTROLLER", "AUDITOR"),
+                rule("POST", "/api/v1/exceptions/999999/assign",
+                        "ADMIN", "TEAM_LEAD"),
+                rule("POST", "/api/v1/exceptions/999999/investigate",
+                        "ADMIN", "ANALYST", "TEAM_LEAD"),
+                rule("POST", "/api/v1/exceptions/999999/comments",
+                        "ADMIN", "ANALYST", "TEAM_LEAD"),
+                rule("POST", "/api/v1/exceptions/999999/escalate",
+                        "ADMIN", "TEAM_LEAD"),
+                rule("POST", "/api/v1/exceptions/999999/match",
+                        "ADMIN", "ANALYST", "TEAM_LEAD"),
+                rule("POST", "/api/v1/exceptions/999999/unmatch",
+                        "ADMIN", "TEAM_LEAD"),
+                rule("POST", "/api/v1/exceptions/999999/resolve",
+                        "ANALYST", "TEAM_LEAD", "CONTROLLER"),
+
+                rule("GET", "/api/v1/approvals/999999",
+                        "ADMIN", "ANALYST", "TEAM_LEAD", "CONTROLLER", "AUDITOR"),
+                rule("POST", "/api/v1/approvals/999999/approve", "CONTROLLER"),
+                rule("POST", "/api/v1/approvals/999999/reject", "CONTROLLER"),
+
+                rule("GET", "/api/v1/audit/verify", "ADMIN", "AUDITOR"),
+                rule("GET", "/api/v1/audit/exception_case/999999", "ADMIN", "AUDITOR"),
+                rule("GET", "/api/v1/reports/workload", "ADMIN", "TEAM_LEAD"),
+                rule("GET", "/api/v1/reports/ageing", "ADMIN", "TEAM_LEAD", "AUDITOR"),
+                rule("GET", "/api/v1/reports/resolution-time", "ADMIN", "TEAM_LEAD", "AUDITOR"),
+                rule("GET", "/api/v1/reports/match/999999", "ADMIN", "TEAM_LEAD", "AUDITOR"),
+                rule("PUT", "/api/v1/configuration", "ADMIN"),
+                rule("GET", "/actuator/health", "ADMIN"));
+
+        for (AccessRule access : rules) {
+            HttpResponse<String> anonymous = matrixRequest(access, null);
+
+            assertEquals(401, anonymous.statusCode(),
+                    "Anonymous request: " + access.method() + " " + access.path());
+
+            for (String role : allRoles) {
+                HttpResponse<String> response = matrixRequest(access, tokens.get(role));
+
+                String scenario = role + " " + access.method() + " " + access.path()
+                        + " returned " + response.statusCode();
+
+                if (access.roles().contains(role)) {
+                    assertNotEquals(401, response.statusCode(), scenario);
+                    assertNotEquals(403, response.statusCode(), scenario);
+                    assertTrue(response.statusCode() < 500, scenario);
+                } else {
+                    assertEquals(403, response.statusCode(), scenario);
+                }
+            }
+        }
+    }
+
+    @Test
+    void unlistedMethodsAndPathsAreDenied() throws Exception {
+        String admin = token(
+                trustedKey, ISSUER, AUDIENCE, "matrix-admin",
+                List.of("ADMIN"), Instant.now().plusSeconds(600));
+
+        assertEquals(403, request(
+                "DELETE", "/api/v1/exceptions/999999",
+                admin, null, null, null).statusCode());
+
+        assertEquals(403, request(
+                "GET", "/api/v1/unlisted-route",
+                admin, null, null, null).statusCode());
+    }
+
+    private static HttpResponse<String> matrixRequest(
+            AccessRule access, String bearer) throws Exception {
+
+        if ("GET".equals(access.method())) {
+            return request(access.method(), access.path(), bearer, null, null, null);
+        }
+
+        // Deliberately malformed JSON stops permitted handlers before a
+        // business action while still allowing the security chain to decide.
+        return request(access.method(), access.path(), bearer, null,
+                "application/json", "{");
+    }
+
+    private static AccessRule rule(String method, String path, String... roles) {
+        return new AccessRule(method, path, List.of(roles));
+    }
+
+    private record AccessRule(String method, String path, List<String> roles) {
+    }
+    @Test
+    void securityErrorsUseTheApiErrorContract() throws Exception {
+        String correlation = "security-test-123";
+
+        HttpRequest missingToken = HttpRequest.newBuilder(
+                        URI.create(base + "/api/v1/exceptions"))
+                .header("X-Correlation-Id", correlation)
+                .GET()
+                .build();
+
+        HttpResponse<String> unauthorized =
+                http.send(missingToken, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(401, unauthorized.statusCode());
+        assertTrue(unauthorized.headers()
+                .firstValue("Content-Type").orElse("")
+                .startsWith("application/json"));
+        assertEquals("Bearer", unauthorized.headers()
+                .firstValue("WWW-Authenticate").orElse(""));
+        assertTrue(unauthorized.body().contains(
+                "\"code\":\"AUTHENTICATION_REQUIRED\""), unauthorized.body());
+        assertTrue(unauthorized.body().contains(
+                "\"correlationId\":\"" + correlation + "\""), unauthorized.body());
+        assertTrue(unauthorized.body().contains("\"timestamp\":"), unauthorized.body());
+
+        String analyst = token(
+                trustedKey, ISSUER, AUDIENCE, "analyst-errors",
+                List.of("ANALYST"), Instant.now().plusSeconds(600));
+
+        HttpRequest forbiddenRequest = HttpRequest.newBuilder(
+                        URI.create(base + "/api/v1/ingestions/statements"))
+                .header("Authorization", "Bearer " + analyst)
+                .header("X-Correlation-Id", correlation)
+                .header("Content-Type", "text/csv")
+                .POST(BodyPublishers.ofString(CSV_HEADER))
+                .build();
+
+        HttpResponse<String> forbidden =
+                http.send(forbiddenRequest, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(403, forbidden.statusCode());
+        assertTrue(forbidden.body().contains(
+                "\"code\":\"ACCESS_DENIED\""), forbidden.body());
+        assertTrue(forbidden.body().contains(
+                "\"correlationId\":\"" + correlation + "\""), forbidden.body());
+        assertTrue(!forbidden.body().contains(analyst), forbidden.body());
+
+        String invalidToken = "not-a-valid-token";
+
+        HttpRequest invalidRequest = HttpRequest.newBuilder(
+                        URI.create(base + "/api/v1/exceptions"))
+                .header("Authorization", "Bearer " + invalidToken)
+                .header("X-Correlation-Id", correlation)
+                .GET()
+                .build();
+
+        HttpResponse<String> invalid =
+                http.send(invalidRequest, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(401, invalid.statusCode());
+        assertTrue(invalid.body().contains(
+                "\"code\":\"AUTHENTICATION_REQUIRED\""), invalid.body());
+        assertTrue(!invalid.body().contains(invalidToken), invalid.body());
+    }
+    private static HttpResponse<String> request(
+            String method,
+            String path,
+            String bearer,
+            String actor,
+            String contentType,
+            String body) throws Exception {
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create(base + path));
+
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        if (actor != null) {
+            builder.header("X-Actor", actor);
+        }
+        if (contentType != null) {
+            builder.header("Content-Type", contentType);
+        }
+
+        builder.method(method, body == null
+                ? BodyPublishers.noBody()
+                : BodyPublishers.ofString(body));
+
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static String token(
+            KeyPair key,
+            String issuer,
+            String audience,
+            String subject,
+            List<String> roles,
+            Instant expiresAt) throws Exception {
+
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(issuer)
+                .audience(audience)
+                .subject(subject)
+                .claim("roles", roles)
+                .issueTime(Date.from(Instant.now()))
+                .expirationTime(Date.from(expiresAt))
+                .build();
+
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .keyID(KEY_ID)
+                        .build(),
+                claims);
+
+        jwt.sign(new RSASSASigner((RSAPrivateKey) key.getPrivate()));
+        return jwt.serialize();
+    }
+
+    private static long number(String body, String field) {
+        Matcher matcher = Pattern.compile(
+                "\"" + Pattern.quote(field) + "\":\\s*(\\d+)")
+                .matcher(body);
+
+        assertTrue(matcher.find(), field + " not found in response: " + body);
+        return Long.parseLong(Objects.requireNonNull(matcher.group(1)));
+    }
+}

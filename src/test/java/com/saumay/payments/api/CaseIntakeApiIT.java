@@ -50,6 +50,7 @@ class CaseIntakeApiIT {
         postgres.start();
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
+                "--spring.profiles.active=dev",
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword());

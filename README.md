@@ -2,7 +2,7 @@
 
 A Java 25 service that ingests bank statements and ledger entries, auto-matches them with a deterministic four-tier engine, and routes everything else to an auditable exceptions queue with maker-checker approval, SLA tracking and a tamper-evident audit trail.
 
-> **Status: Phases 0-6 approved; Phase 7 is in progress.** Reporting uses a
+> **Status: Phases 0-7 complete; Phase 8 is in progress.** Reporting uses a
 > current case snapshot and an explicit as-of date.
 
 ## Why this exists
@@ -20,8 +20,8 @@ Banks lose analyst hours every day matching statement lines to ledger entries, c
 | 4 | Exceptions, manual match, split, unmatch | Complete and approved | Phase 4 gate |
 | 5 | Audit chain, maker-checker | Complete and approved | CI for commit `10fd859` |
 | 6 | Reporting, metrics, structured logs | Complete and approved | CI for commit `f0060b8` |
-| 7 | Kafka and transactional outbox | In progress | Outbox transaction implementation being verified |
-| 8 | Authentication and RBAC | Not started | |
+| 7 | Kafka and transactional outbox | Complete | CI for commit `c6d9186` |
+| 8 | Authentication and RBAC | In progress | OIDC HTTP verification in progress; compatibility mode remains unsecured |
 | 9 | Thin dashboard | Not started | |
 | 10 | Performance and reliability runs | Not started | |
 | 11 | Production polish | Not started | |
@@ -35,7 +35,8 @@ The full local verification for commit `10fd859` passed 483 unit tests and
 also passed for that commit. The Phase 6 local `mvn verify` passed 496 unit
 tests and 210 integration tests, with all configured coverage checks met.
 GitHub Actions also passed for Phase 6 commit `f0060b8`, and its gate was
-approved. Phase 7 is in progress. See [docs/benchmarks.md](docs/benchmarks.md)
+approved. Phase 7 CI passed for commit `c6d9186`. Phase 8 is in progress.
+See [docs/benchmarks.md](docs/benchmarks.md)
 for separately recorded matching measurements.
 
 ## Documentation

@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 /** Fixed demo users for local development and tests. Active only under the dev profile (ADR-0011). */
 @Component
-@Profile("dev")
+@Profile("dev & !oidc")
 public final class DevActorRegistry implements ActorContext {
 
     private static final Map<String, Role> USERS = Map.of(

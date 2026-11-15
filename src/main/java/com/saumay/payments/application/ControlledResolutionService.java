@@ -112,6 +112,7 @@ public final class ControlledResolutionService {
         String by = requiredText(checker, MAX_NAME, "checker");
         String text = optionalText(note, MAX_REASON, "note");
         ApprovalRequest request = load(approvalId);
+        blockOidcDecisionUntilIdentityMigration(request, by);
         Instant now = clock.instant();
         ApprovalRequest decided = decide(request, by, now, () -> request.approve(by, now, text));
 
@@ -135,6 +136,7 @@ public final class ControlledResolutionService {
         String by = requiredText(checker, MAX_NAME, "checker");
         String why = requiredText(note, MAX_REASON, "note");
         ApprovalRequest request = load(approvalId);
+        blockOidcDecisionUntilIdentityMigration(request, by);
         Instant now = clock.instant();
         ApprovalRequest decided = decide(request, by, now, () -> request.reject(by, now, why));
         switch (approvals.reject(new Rejection(decided, ApprovalAudit.decided(request, decided)), now)) {
@@ -162,6 +164,20 @@ public final class ControlledResolutionService {
         }
     }
 
+    /**
+     * Temporary fail-closed boundary during the identity migration.
+     *
+     * Approval rows do not yet record trusted identity provenance. Therefore
+     * an OIDC checker cannot safely decide any pending approval until that
+     * provenance and its migration rules are implemented.
+     */
+    private static void blockOidcDecisionUntilIdentityMigration(ApprovalRequest request, String checker) {
+        if (request.status() == com.saumay.payments.domain.approval.ApprovalStatus.PENDING
+                && checker.matches("oidc-[0-9a-f]{64}")) {
+            throw new ApprovalRejectedException(ApprovalErrorCode.IDENTITY_MIGRATION_REQUIRED,
+                    "Approval decisions require identity migration before OIDC can be enabled");
+        }
+    }
     private ApprovalRequest load(long approvalId) {
         return approvals.find(approvalId).orElseThrow(() -> new ApprovalRejectedException(
                 ApprovalErrorCode.APPROVAL_NOT_FOUND, "No approval request exists with id " + approvalId));

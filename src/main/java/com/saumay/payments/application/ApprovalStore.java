@@ -18,6 +18,9 @@ public interface ApprovalStore {
 
     Optional<ApprovalRequest> find(long approvalId);
 
+    /** Returns the immutable maker provenance recorded with an approval. */
+    Optional<IdentityProvenance> findMakerProvenance(long approvalId);
+
     Optional<ApprovalRequest> findPendingForCase(long caseId);
 
     /** Writes the pending request, its timeline entry and its audit event. */
@@ -51,10 +54,56 @@ public interface ApprovalStore {
         }
     }
 
-    record Submission(ApprovalRequest request, long expectedCaseVersion, LongFunction<AuditNote> audit) {
+    enum IdentityScheme {
+        LEGACY,
+        OIDC
+    }
+
+    /**
+     * Maker identity provenance. The issuer is compared exactly and is not
+     * normalized. A database value alone does not authenticate an actor.
+     */
+    record IdentityProvenance(IdentityScheme scheme, String issuer) {
+        public IdentityProvenance {
+            Objects.requireNonNull(scheme, "scheme");
+
+            if (scheme == IdentityScheme.LEGACY && issuer != null) {
+                throw new IllegalArgumentException("legacy provenance cannot have an issuer");
+            }
+
+            if (scheme == IdentityScheme.OIDC
+                    && (issuer == null || issuer.isBlank() || issuer.length() > 2048)) {
+                throw new IllegalArgumentException("OIDC provenance requires a valid issuer");
+            }
+        }
+
+        public static IdentityProvenance legacy() {
+            return new IdentityProvenance(IdentityScheme.LEGACY, null);
+        }
+
+        public static IdentityProvenance oidc(String issuer) {
+            return new IdentityProvenance(IdentityScheme.OIDC, issuer);
+        }
+    }
+
+    record Submission(
+            ApprovalRequest request,
+            long expectedCaseVersion,
+            LongFunction<AuditNote> audit,
+            IdentityProvenance makerProvenance) {
+
+        /** Existing callers remain explicitly LEGACY until migrated. */
+        public Submission(
+                ApprovalRequest request,
+                long expectedCaseVersion,
+                LongFunction<AuditNote> audit) {
+            this(request, expectedCaseVersion, audit, IdentityProvenance.legacy());
+        }
+
         public Submission {
             Objects.requireNonNull(request, "request");
             Objects.requireNonNull(audit, "audit");
+            Objects.requireNonNull(makerProvenance, "makerProvenance");
         }
     }
 

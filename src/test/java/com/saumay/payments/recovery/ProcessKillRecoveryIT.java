@@ -132,6 +132,7 @@ class ProcessKillRecoveryIT {
                 "-cp",
                 quote(classpath),
                 "com.saumay.payments.PaymentsApplication",
+                quote("--spring.profiles.active=dev"),
                 quote("--server.port=" + port),
                 quote("--spring.datasource.url=" + url),
                 quote("--spring.datasource.username=" + postgres.getUsername()),
