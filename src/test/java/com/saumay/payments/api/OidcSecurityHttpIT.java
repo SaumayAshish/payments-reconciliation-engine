@@ -570,6 +570,44 @@ class OidcSecurityHttpIT {
                 admin, null, null, null).statusCode());
     }
 
+    @Test
+    void unlistedAuditReportAndActuatorRoutesAreDenied() throws Exception {
+        String admin = token(
+                trustedKey, ISSUER, AUDIENCE, "route-policy-admin",
+                List.of("ADMIN"), Instant.now().plusSeconds(600));
+        String auditor = token(
+                trustedKey, ISSUER, AUDIENCE, "route-policy-auditor",
+                List.of("AUDITOR"), Instant.now().plusSeconds(600));
+        String lead = token(
+                trustedKey, ISSUER, AUDIENCE, "route-policy-lead",
+                List.of("TEAM_LEAD"), Instant.now().plusSeconds(600));
+
+        HttpResponse<String> audit = request(
+                "GET", "/api/v1/audit/unlisted", auditor,
+                null, null, null);
+        assertEquals(403, audit.statusCode(), audit.body());
+
+        HttpResponse<String> report = request(
+                "GET", "/api/v1/reports/unlisted", lead,
+                null, null, null);
+        assertEquals(403, report.statusCode(), report.body());
+
+        HttpResponse<String> actuator = request(
+                "GET", "/actuator/unlisted", admin,
+                null, null, null);
+        assertEquals(403, actuator.statusCode(), actuator.body());
+
+        HttpResponse<String> wrongMethod = request(
+                "PUT", "/actuator/health", admin,
+                null, null, null);
+        assertEquals(403, wrongMethod.statusCode(), wrongMethod.body());
+
+        HttpResponse<String> allowedHealth = request(
+                "GET", "/actuator/health", admin,
+                null, null, null);
+        assertEquals(200, allowedHealth.statusCode(), allowedHealth.body());
+    }
+
     private static HttpResponse<String> matrixRequest(
             AccessRule access, String bearer) throws Exception {
 

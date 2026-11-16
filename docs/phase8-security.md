@@ -251,3 +251,19 @@ OIDC identity.
 Run the test and the full Maven verification gate before treating this
 checkpoint as verified. The stable-subject requirement and other Phase 8
 limitations described above remain applicable.
+
+## Explicit audit, report and Actuator routes
+
+The OIDC security chain lists the current audit and report route shapes
+rather than granting a role access to every path beneath those prefixes.
+Actuator access is limited to GET requests for the configured health, info,
+metrics and Prometheus endpoint shapes, and requires ADMIN.
+
+Audit history accepts two path variables, and health and metrics accept a
+single component or metric name. Those variable segments are intentionally
+matched as such. A new endpoint or management operation needs an explicit
+security rule and tests.
+
+`OidcSecurityHttpIT` checks representative unlisted paths and a denied
+Actuator method. Run the HTTP suite and full Maven verification before
+considering this change verified. Phase 8 remains in progress.

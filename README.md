@@ -113,3 +113,9 @@ See `docs/phase8-security.md`.
 The OIDC integration suite includes a signed-token maker-checker workflow.
 Run the suite and the full Maven verification gate to validate the current
 checkout. Phase 8 remains in progress; see `docs/phase8-security.md`.
+
+### Explicit security route policies
+
+The experimental OIDC profile specifies the current audit, report and
+Actuator route shapes. New routes need an explicit authorization rule and
+tests. See `docs/phase8-security.md` for the current security limitations.

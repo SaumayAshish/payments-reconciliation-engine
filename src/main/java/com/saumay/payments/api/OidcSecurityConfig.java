@@ -126,7 +126,8 @@ public class OidcSecurityConfig {
                         .hasRole("CONTROLLER")
 
                         .requestMatchers(HttpMethod.GET,
-                                "/api/v1/audit/**")
+                                "/api/v1/audit/verify",
+                                "/api/v1/audit/*/*")
                         .hasAnyRole("AUDITOR", "ADMIN")
 
                         .requestMatchers(HttpMethod.GET,
@@ -134,14 +135,22 @@ public class OidcSecurityConfig {
                         .hasAnyRole("TEAM_LEAD", "ADMIN")
 
                         .requestMatchers(HttpMethod.GET,
-                                "/api/v1/reports/**")
+                                "/api/v1/reports/ageing",
+                                "/api/v1/reports/resolution-time",
+                                "/api/v1/reports/match/*")
                         .hasAnyRole("TEAM_LEAD", "AUDITOR", "ADMIN")
 
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/v1/configuration")
                         .hasRole("ADMIN")
 
-                        .requestMatchers("/actuator/**")
+                        .requestMatchers(HttpMethod.GET,
+                                "/actuator/health",
+                                "/actuator/health/*",
+                                "/actuator/info",
+                                "/actuator/metrics",
+                                "/actuator/metrics/*",
+                                "/actuator/prometheus")
                         .hasRole("ADMIN")
 
                         .anyRequest().denyAll())
