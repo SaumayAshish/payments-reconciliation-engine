@@ -298,3 +298,16 @@ this migration as verified.
 
 Other functional tests still use the unsecured `dev` compatibility profile.
 That profile and its test-only opt-in have not yet been removed.
+
+## Authenticated ingestion integration tests
+
+`IngestionApiIT` uses the OIDC profile and a test-only local JWK endpoint.
+Its existing ingestion and concurrency requests use signed admin tokens. A
+separate test checks that anonymous and analyst uploads are denied without
+persisting ingestion data.
+
+`TestOidcIssuer` is a test fixture that generates an ephemeral RSA key and
+synthetic tokens. It is not used by the application at runtime. Other legacy
+API integration suites still use the unsecured `dev` compatibility profile.
+Run the targeted suite and full Maven verification before considering this
+migration verified.

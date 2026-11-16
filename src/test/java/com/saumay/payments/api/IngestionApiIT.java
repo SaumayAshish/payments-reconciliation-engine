@@ -37,17 +37,27 @@ class IngestionApiIT {
 
     private static PostgreSQLContainer postgres;
     private static ConfigurableApplicationContext context;
+    private static TestOidcIssuer issuer;
+    private static String adminToken;
+    private static String analystToken;
     private static JdbcTemplate jdbc;
     private static HttpClient http;
     private static String base;
 
     @BeforeAll
-    static void start() {
+    static void start() throws Exception {
+        issuer = new TestOidcIssuer();
+        adminToken = issuer.token("ingestion-admin", "ADMIN");
+        analystToken = issuer.token("ingestion-analyst", "ANALYST");
+
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
-                "--spring.profiles.active=dev",
+                "--spring.profiles.active=oidc",
+                "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword(),
@@ -65,11 +75,36 @@ class IngestionApiIT {
         if (postgres != null) {
             postgres.stop();
         }
+        if (issuer != null) {
+            issuer.close();
+        }
     }
 
     @BeforeEach
     void clean() {
         jdbc.execute("TRUNCATE ingestion_file, statement_line, ledger_entry, rejected_line RESTART IDENTITY CASCADE");
+    }
+
+    @Test
+    void anonymousAndNonAdminUploadsAreDeniedWithoutWritingData() throws Exception {
+        byte[] body = CSV_3.getBytes(StandardCharsets.UTF_8);
+        URI uri = URI.create(base + "/api/v1/ingestions/statements");
+
+        HttpRequest anonymous = HttpRequest.newBuilder(uri)
+                .header("Content-Type", "text/csv")
+                .POST(BodyPublishers.ofByteArray(body))
+                .build();
+
+        HttpRequest analyst = HttpRequest.newBuilder(uri)
+                .header("Content-Type", "text/csv")
+                .header("Authorization", "Bearer " + analystToken)
+                .POST(BodyPublishers.ofByteArray(body))
+                .build();
+
+        assertEquals(401, http.send(anonymous, HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(403, http.send(analyst, HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(0, count("ingestion_file"));
+        assertEquals(0, count("statement_line"));
     }
 
     @Test
@@ -317,13 +352,17 @@ class IngestionApiIT {
     private static HttpResponse<String> post(String path, String contentType, byte[] body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/api/v1/ingestions" + path))
                 .header("Content-Type", contentType)
+                .header("Authorization", "Bearer " + adminToken)
                 .POST(BodyPublishers.ofByteArray(body))
                 .build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private static HttpResponse<String> get(String path) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(base + path)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
+                .header("Authorization", "Bearer " + adminToken)
+                .GET()
+                .build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 

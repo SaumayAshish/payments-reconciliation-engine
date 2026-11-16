@@ -133,3 +133,9 @@ compatibility path.
 The process-kill recovery test uses the OIDC profile with a local test-only
 JWK endpoint and signed token. Other legacy functional tests still require
 the unsecured `dev` compatibility profile. See `docs/phase8-security.md`.
+
+### Authenticated ingestion testing
+
+The ingestion API integration suite uses the OIDC profile with a local
+test-only signing key and JWK endpoint. Other legacy API suites still need
+migration. See `docs/phase8-security.md`.
