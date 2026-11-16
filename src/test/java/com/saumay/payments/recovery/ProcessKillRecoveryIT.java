@@ -45,13 +45,21 @@ class ProcessKillRecoveryIT {
     private static final int LINES = 1000;
     private static final HttpClient HTTP = HttpClient.newHttpClient();
 
+    private static final String ISSUER = "https://recovery-issuer.example.test";
+    private static final String AUDIENCE = "payments-recovery-test";
+    private static final String KEY_ID = "recovery-test-key";
+
     private static PostgreSQLContainer postgres;
     private static JdbcTemplate jdbc;
+    private static com.sun.net.httpserver.HttpServer jwkServer;
+    private static String adminToken;
 
     private final List<Process> started = new ArrayList<>();
 
     @BeforeAll
-    static void startDatabase() {
+    static void startDatabase() throws Exception {
+        startTestIdentityProvider();
+
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
         jdbc = new JdbcTemplate(new DriverManagerDataSource(
@@ -63,6 +71,66 @@ class ProcessKillRecoveryIT {
         if (postgres != null) {
             postgres.stop();
         }
+        if (jwkServer != null) {
+            jwkServer.stop(0);
+        }
+    }
+
+    private static void startTestIdentityProvider() throws Exception {
+        java.security.KeyPairGenerator generator =
+                java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        java.security.KeyPair keyPair = generator.generateKeyPair();
+
+        com.nimbusds.jose.jwk.RSAKey publicKey =
+                new com.nimbusds.jose.jwk.RSAKey.Builder(
+                        (java.security.interfaces.RSAPublicKey) keyPair.getPublic())
+                        .keyID(KEY_ID)
+                        .build();
+
+        byte[] jwks = new com.nimbusds.jose.jwk.JWKSet(publicKey)
+                .toString()
+                .getBytes(StandardCharsets.UTF_8);
+
+        jwkServer = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+
+        jwkServer.createContext("/jwks", exchange -> {
+            try {
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, jwks.length);
+                try (var output = exchange.getResponseBody()) {
+                    output.write(jwks);
+                }
+            } finally {
+                exchange.close();
+            }
+        });
+
+        jwkServer.start();
+
+        java.time.Instant now = java.time.Instant.now();
+        com.nimbusds.jwt.JWTClaimsSet claims =
+                new com.nimbusds.jwt.JWTClaimsSet.Builder()
+                        .issuer(ISSUER)
+                        .audience(AUDIENCE)
+                        .subject("recovery-test-admin")
+                        .claim("roles", List.of("ADMIN"))
+                        .issueTime(java.util.Date.from(now))
+                        .expirationTime(java.util.Date.from(now.plusSeconds(7200)))
+                        .build();
+
+        com.nimbusds.jwt.SignedJWT jwt = new com.nimbusds.jwt.SignedJWT(
+                new com.nimbusds.jose.JWSHeader.Builder(
+                        com.nimbusds.jose.JWSAlgorithm.RS256)
+                        .keyID(KEY_ID)
+                        .build(),
+                claims);
+
+        jwt.sign(new com.nimbusds.jose.crypto.RSASSASigner(
+                (java.security.interfaces.RSAPrivateKey) keyPair.getPrivate()));
+
+        adminToken = jwt.serialize();
     }
 
     @AfterEach
@@ -76,6 +144,13 @@ class ProcessKillRecoveryIT {
 
         // First process: migrates the schema, then starts an ingestion that stalls at line 500.
         RunningApp first = startApp();
+
+        HttpRequest anonymous = HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + first.port() + "/api/v1/ingestions/0"))
+                .GET()
+                .build();
+        assertEquals(401, HTTP.send(anonymous, BodyHandlers.discarding()).statusCode());
+
         jdbc.execute("CREATE FUNCTION slow_insert() RETURNS trigger AS $$ BEGIN"
                 + " IF NEW.line_number = 500 THEN PERFORM pg_sleep(5); END IF; RETURN NEW; END $$ LANGUAGE plpgsql");
         jdbc.execute("CREATE TRIGGER trg_slow_insert BEFORE INSERT ON statement_line"
@@ -132,7 +207,11 @@ class ProcessKillRecoveryIT {
                 "-cp",
                 quote(classpath),
                 "com.saumay.payments.PaymentsApplication",
-                quote("--spring.profiles.active=dev"),
+                quote("--spring.profiles.active=oidc"),
+                quote("--payments.security.issuer=" + ISSUER),
+                quote("--payments.security.audience=" + AUDIENCE),
+                quote("--payments.security.jwk-set-uri=http://127.0.0.1:"
+                        + jwkServer.getAddress().getPort() + "/jwks"),
                 quote("--server.port=" + port),
                 quote("--spring.datasource.url=" + url),
                 quote("--spring.datasource.username=" + postgres.getUsername()),
@@ -172,9 +251,10 @@ class ProcessKillRecoveryIT {
     private static boolean answers(int port) {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/ingestions/0"))
+                    .header("Authorization", "Bearer " + adminToken)
                     .timeout(Duration.ofSeconds(2)).GET().build();
-            HTTP.send(request, BodyHandlers.discarding());
-            return true;
+            HttpResponse<Void> response = HTTP.send(request, BodyHandlers.discarding());
+            return response.statusCode() == 404;
         } catch (Exception e) {
             return false;
         }
@@ -195,6 +275,7 @@ class ProcessKillRecoveryIT {
         HttpRequest request = HttpRequest.newBuilder(
                         URI.create("http://localhost:" + app.port() + "/api/v1/ingestions/statements"))
                 .header("Content-Type", "text/csv")
+                .header("Authorization", "Bearer " + adminToken)
                 .POST(BodyPublishers.ofByteArray(body))
                 .build();
         return HTTP.sendAsync(request, BodyHandlers.ofString());

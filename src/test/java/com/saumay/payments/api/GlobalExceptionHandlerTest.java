@@ -76,11 +76,24 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.correlationId").value(org.hamcrest.Matchers.matchesPattern(uuidPattern)));
     }
 
-    @Test
+        @Test
     void anUnsafeSuppliedCorrelationIdIsReplacedNeverEchoed() throws Exception {
-        mvc.perform(get("/test/duplicate").header("X-Correlation-Id", "bad id!"))
-                .andExpect(header().string("X-Correlation-Id", not(containsString("bad"))))
-                .andExpect(jsonPath("$.correlationId").value(not(containsString("bad"))));
+        String unsafeId = "bad id!";
+        String uuidPattern = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+        var result = mvc.perform(get("/test/duplicate").header("X-Correlation-Id", unsafeId))
+                .andExpect(status().isConflict())
+                .andExpect(header().string(
+                        "X-Correlation-Id",
+                        org.hamcrest.Matchers.matchesPattern(uuidPattern)))
+                .andReturn();
+
+        String generatedId = result.getResponse().getHeader("X-Correlation-Id");
+
+        org.junit.jupiter.api.Assertions.assertNotEquals(unsafeId, generatedId);
+
+        new org.springframework.test.util.JsonPathExpectationsHelper("$.correlationId")
+                .assertValue(result.getResponse().getContentAsString(), generatedId);
     }
 
     @Test

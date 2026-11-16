@@ -127,3 +127,9 @@ The legacy `dev` HTTP profile is unsecured and requires an explicit
 test resources for legacy integration tests; it must not be used in
 production. Phase 8 still includes migrating those tests and removing the
 compatibility path.
+
+### Authenticated recovery testing
+
+The process-kill recovery test uses the OIDC profile with a local test-only
+JWK endpoint and signed token. Other legacy functional tests still require
+the unsecured `dev` compatibility profile. See `docs/phase8-security.md`.

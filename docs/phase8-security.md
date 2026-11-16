@@ -283,3 +283,18 @@ that test classpath configuration.
 `DevProfileGuardIT` checks that an explicit false value prevents startup.
 The compatibility chain and header-based behavior still need to be removed
 after the affected tests are migrated to authenticated requests.
+
+## Authenticated process-recovery test
+
+`ProcessKillRecoveryIT` starts its child application with the OIDC profile.
+It supplies a locally generated test key through a local JWK endpoint and
+uses a signed admin token for readiness and ingestion requests. It also
+checks that an anonymous request is rejected.
+
+The test still kills the child while an ingestion transaction is open, checks
+that no partial ingestion remains, and verifies a successful retry after
+restart. Run the targeted test and full Maven verification before treating
+this migration as verified.
+
+Other functional tests still use the unsecured `dev` compatibility profile.
+That profile and its test-only opt-in have not yet been removed.
