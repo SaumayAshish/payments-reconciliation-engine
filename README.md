@@ -119,3 +119,11 @@ checkout. Phase 8 remains in progress; see `docs/phase8-security.md`.
 The experimental OIDC profile specifies the current audit, report and
 Actuator route shapes. New routes need an explicit authorization rule and
 tests. See `docs/phase8-security.md` for the current security limitations.
+
+### Development compatibility safeguard
+
+The legacy `dev` HTTP profile is unsecured and requires an explicit
+`payments.security.allow-insecure-dev=true` opt-in. The setting exists in
+test resources for legacy integration tests; it must not be used in
+production. Phase 8 still includes migrating those tests and removing the
+compatibility path.

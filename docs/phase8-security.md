@@ -267,3 +267,19 @@ security rule and tests.
 `OidcSecurityHttpIT` checks representative unlisted paths and a denied
 Actuator method. Run the HTTP suite and full Maven verification before
 considering this change verified. Phase 8 remains in progress.
+
+## Explicit opt-in for unsecured dev compatibility
+
+The `dev` compatibility HTTP chain is unsecured. Starting the application with
+`dev` and without `oidc` now requires the explicit property
+`payments.security.allow-insecure-dev=true`; otherwise startup fails.
+
+The opt-in is an accidental-configuration safeguard, not authentication or a
+production security boundary. Do not set it in a production deployment.
+Existing legacy integration tests use a test-only `application-dev.properties`
+to enable the compatibility chain. The process-recovery test also depends on
+that test classpath configuration.
+
+`DevProfileGuardIT` checks that an explicit false value prevents startup.
+The compatibility chain and header-based behavior still need to be removed
+after the affected tests are migrated to authenticated requests.

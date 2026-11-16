@@ -1,5 +1,6 @@
 package com.saumay.payments.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,7 +20,14 @@ import org.springframework.security.web.SecurityFilterChain;
 public class LegacySecurityConfig {
 
     @Bean
-    SecurityFilterChain legacySecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain legacySecurityFilterChain(
+            HttpSecurity http,
+            @Value("${payments.security.allow-insecure-dev:false}") boolean allowInsecureDev) throws Exception {
+        if (!allowInsecureDev) {
+            throw new IllegalStateException(
+                    "The dev profile is unsecured and requires payments.security.allow-insecure-dev=true");
+        }
+
         http
                 .csrf(csrf -> csrf.disable())
                 .anonymous(anonymous -> anonymous.disable())
