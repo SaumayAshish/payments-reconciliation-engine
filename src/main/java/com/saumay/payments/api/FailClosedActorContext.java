@@ -4,9 +4,9 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-/** Outside the dev profile nobody can act until real authentication exists (Phase 8): the safe default. */
+/** Without OIDC, no actor can be resolved. */
 @Component
-@Profile("!dev & !oidc")
+@Profile("!oidc")
 public final class FailClosedActorContext implements ActorContext {
 
     @Override

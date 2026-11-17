@@ -1,350 +1,113 @@
 # Phase 8: authentication and authorization
 
-> Current status: the OIDC approval path carries verified issuer provenance.
-> The historical sections below describe earlier checkpoints; where they say
-> that every OIDC decision is blocked or that provenance is not wired, that
-> statement has been superseded by the "OIDC approval provenance" section.
+**Status: in progress.** The OIDC profile is experimental. The unsecured
+development compatibility chain and header-based demo actor registry have
+been removed. A security and identity-migration review is still required
+before the Phase 8 gate.
 
-Status: in progress. Authentication and RBAC are not yet enforced across
-the API.
+## Runtime behavior
 
-## Selected approach
-
-The application will act as an OAuth 2.0 resource server and accept JWT
-access tokens from a configured, trusted identity provider. Token signature,
-issuer, audience and applicable time constraints must be validated before
-claims are used.
-
-No production issuer, credential or signing key is stored in this repository.
-The issuer and audience will be supplied by deployment configuration.
-
-## Actor identity
-
-`OidcActorId` derives an opaque identifier from the exact, case-sensitive
-issuer and subject values. It must only be called with claims from a
-successfully validated token. It does not validate JWTs.
-
-The experimental OIDC HTTP profile connects this identity function to the
-security context. The compatibility mode still retains the earlier
-header-based behavior and is not secured.
-
-Existing historical actor IDs were recorded under the earlier identity
-scheme. Switching schemes does not automatically link those historical IDs
-to OIDC identities. Deployment and maker-checker migration behavior must be
-resolved and tested before enabling the new identity scheme against existing
-data.
-
-## Authorization requirements
-
-Every implemented HTTP route and management endpoint needs an explicit policy.
-The API catalogue is the starting role matrix. The supported roles are
-ADMIN, ANALYST, TEAM_LEAD, CONTROLLER and AUDITOR.
-
-The authenticated identity, not `X-Actor` or a request body, must be used
-for audit and maker-checker decisions. Denied roles must not perform side
-effects. Unknown routes and methods must fail closed.
-
-## Verification still required
-
-- Signed access tokens: valid, expired, malformed, wrong issuer, wrong
-  audience and invalid signature.
-- Role allow and deny cases for each implemented endpoint and HTTP method.
-- Management endpoint policies and unknown-route behavior.
-- Actor-header spoofing and maker-checker separation.
-- Migration of existing API integration tests to authenticated requests.
-- Full Maven verification, coverage and GitHub Actions.
-
-## Signed-token validation foundation
-
-`TrustedJwtValidator` applies the configured issuer and standard timestamp
-validation, requires an expiry and subject, and requires the configured
-audience. It is intended to be attached to a signature-verifying JWT
-decoder. It does not verify signatures by itself.
-
-`TrustedJwtValidatorTest` uses ephemeral RSA keys and signed tokens to test
-the decoder and validator together. This foundation is not yet wired into
-HTTP requests and does not provide endpoint protection.
-
-## Temporary approval-decision boundary
-
-Approval records currently contain a maker string but no trusted identity
-scheme or verified mapping to an OIDC subject. During Phase 8, an OIDC-shaped
-checker ID is therefore refused for every pending approval decision, including
-new approvals. The API maps this refusal to HTTP 409 with code
-`IDENTITY_MIGRATION_REQUIRED`.
-
-This is a temporary availability restriction, not a complete authorization
-control. The prefix check is not proof of authentication and must never be used
-to authenticate a caller. The HTTP security migration must supply verified
-identity, record trustworthy provenance, and replace this temporary block with
-tested maker-checker logic before OIDC approval decisions are enabled.
-
-This refusal currently makes no approval decision and records no separate
-denied-attempt audit event.
-
-## Verified JWT actor mapping
-
-`VerifiedJwtActorMapper` maps an already authenticated JWT to the existing
-single-role `Actor` model. Its initial token contract requires a JSON `roles`
-array with exactly one recognized application role. Missing, unknown,
-incorrectly typed, or multiple roles are denied.
-
-The mapper derives the actor ID from the exact verified issuer and subject.
-It does not verify a signature or establish authentication. It must only be
-called with a JWT obtained from the configured Spring Security authentication
-flow.
-
-The experimental OIDC filter chain uses this mapper after JWT validation.
-Compatibility-mode endpoint access remains unchanged.
-
-## Authenticated actor context
-
-`SecurityContextActorContext` resolves an actor from an authenticated JWT
-principal held by Spring Security. It ignores the caller-provided actor header.
-
-The adapter is registered by the experimental OIDC profile. Its unit tests
-use a synthetic context; separate OIDC HTTP tests exercise the actual
-signature-verifying filter chain.
-
-## Exception-controller actor transition
-
-Exception actions use the authenticated JWT actor when a security context
-exists. The caller's X-Actor value cannot override that JWT identity.
-An unauthenticated or non-JWT security context is rejected.
-
-Until the HTTP security filter chain is installed, requests with no security
-context still use the previous X-Actor behavior. This is a transitional
-compatibility path, not authentication. It must be removed when JWT
-authentication becomes mandatory.
-
-
-## Experimental OIDC HTTP profile
-
-The `oidc` profile enables the Spring Security JWT resource-server chain.
-It requires all three deployment properties:
+The application acts as an OAuth 2.0 resource server when the `oidc` profile
+is active. The profile requires these deployment properties:
 
 - `payments.security.issuer`
 - `payments.security.audience`
 - `payments.security.jwk-set-uri`
 
-The decoder is configured for RS256 and uses `TrustedJwtValidator` for
-issuer, audience, expiry and subject checks. The token must contain exactly
-one recognized application role in its `roles` array.
+The configured decoder accepts RS256 signatures and uses
+`TrustedJwtValidator` to check the configured issuer and audience, standard
+time constraints, an expiry, and a nonblank subject. Tokens must contain a
+JSON `roles` array with exactly one recognized application role: `ADMIN`,
+`ANALYST`, `TEAM_LEAD`, `CONTROLLER`, or `AUDITOR`.
 
-The OIDC chain has explicit route rules and denies unlisted routes. The
-authenticated JWT supplies actor identity. The temporary approval guard
-continues to block OIDC approval and rejection decisions until identity
-provenance is implemented.
+No production identity-provider credentials or signing keys belong in this
+repository. Configure a trusted issuer, audience, and JWK endpoint for the
+deployment.
 
-**The OIDC profile remains experimental.** Real-HTTP token, role-matrix and
-actor-spoofing checks have passed in targeted runs. Identity migration and
-the full verification gate remain outstanding.
+When `oidc` is not active, the application denies HTTP access by default,
+including Actuator. Selecting `dev` or supplying the former
+`payments.security.allow-insecure-dev` property does not re-enable the
+removed permit-all chain.
 
-Without `oidc` or `dev`, HTTP access is denied by default. The explicit `dev`
-profile retains unsecured compatibility behavior for older functional tests;
-it must not be used as a production security configuration.
+## Authorization and actor identity
 
-The compatibility chain must be removed before the Phase 8 gate.
+The OIDC security chain specifies policies for the implemented route shapes
+and denies requests that do not match a permitted rule. The audit, report,
+and Actuator policies list their current route shapes; variable path
+segments remain variable. New routes and methods require an explicit policy
+and tests.
 
-## OIDC real-HTTP integration test
+The actor comes from the authenticated JWT. `OidcActorId` derives an opaque
+identifier from the exact, case-sensitive issuer and subject.
+`SecurityContextActorContext` and the exception actor resolver ignore the
+caller-provided `X-Actor` value for identity. A missing, unauthenticated, or
+non-JWT security context cannot establish an actor.
 
-`OidcSecurityHttpIT` starts the actual application with the `oidc` profile,
-a local test-only JWK endpoint, generated RSA keys and PostgreSQL. It is
-intended to exercise signed-token validation, selected role restrictions,
-Actuator access and a spoofed actor header through HTTP.
+Security errors use the API error shape and correlation ID. Authentication
+failures include a Bearer challenge, and security error responses are
+marked `no-store`.
 
-The full endpoint-role matrix and identity-provenance migration remain
-separate Phase 8 work. The compatibility mode remains unsecured.
+## Approval identity provenance
 
-## Endpoint role-matrix test
+New approval submissions record the maker's identity scheme and, for OIDC,
+the verified issuer. The JDBC store writes that provenance with the approval
+and its audit evidence in the same transaction. Database migration V14
+classifies existing rows as `LEGACY` and prevents provenance from being
+changed later.
 
-The OIDC HTTP integration suite includes a matrix for the listed implemented
-routes and the five application roles. It checks that anonymous requests are
-rejected, disallowed roles receive 403, and allowed roles pass the security
-boundary. Write requests use malformed bodies to avoid business mutations.
+A pending decision requires compatible maker and checker provenance:
+`LEGACY` with `LEGACY`, or OIDC with the exact same issuer. Missing or
+incompatible provenance is refused with `IDENTITY_MIGRATION_REQUIRED`.
+Within a compatible context, the existing maker-checker rule rejects the
+same actor and records the denied attempt.
 
-This test does not replace business-operation tests, approval identity
-migration, full verification or the removal of the unsecured compatibility
-chain.
-
-## Security error responses
-
-The experimental OIDC filter chain uses the common API error shape for
-authentication and authorization failures. Responses include the correlation
-ID and do not echo bearer tokens. Authentication failures include a Bearer
-challenge; security error responses are marked `no-store`.
-
-The compatibility chain remains unsecured and is scheduled for removal.
-
-## Default-deny HTTP behavior
-
-When neither `oidc` nor `dev` is active, the application denies HTTP access,
-including Actuator. The explicit `dev` profile temporarily retains the old
-unsecured behavior for legacy functional tests.
-
-`DefaultSecurityHttpIT` checks the default-deny chain over HTTP. The legacy
-functional and process-recovery tests explicitly select `dev` until they are
-migrated to authenticated requests. These tests do not prove OIDC security.
-
-## Approval identity provenance schema
-
-V14 records the maker identity scheme and, for OIDC makers, the issuer.
-Existing approval rows are classified as LEGACY without guessing an OIDC
-identity. The database prevents later changes to the recorded provenance.
-
-The schema is only a foundation. Current application code does not yet write
-or enforce OIDC provenance, and the temporary block on OIDC approval decisions
-remains active. A database value alone is not proof that a caller was
-authenticated.
-
-The next implementation must write provenance in the approval transaction,
-compare maker and checker only when their trusted identity contexts are
-compatible, and test rollback and maker-checker separation over HTTP.
-
-## Transactional provenance persistence
-
-The approval persistence port now accepts an explicit maker identity scheme
-and issuer. The existing submission constructor records LEGACY provenance.
-The JDBC store inserts the approval and its provenance in the same transaction
-as its activity and audit event.
-
-The store can read the immutable provenance for a later decision. A failed
-audit append must roll back the approval, its provenance and activity.
-
-This is persistence wiring only. The HTTP approval path does not yet provide
-OIDC provenance, and the temporary OIDC decision block remains active.
-
-
-## OIDC approval provenance
-
-The authenticated JWT mapper attaches the verified issuer to the actor. New
-approval submissions persist that provenance with the approval transaction.
-A pending approval can be decided only when maker and checker provenance match:
-legacy with legacy, or OIDC with the exact same issuer. Missing provenance and
-mixed schemes or issuers fail closed with `IDENTITY_MIGRATION_REQUIRED`.
-
-Within a compatible identity context, the existing maker-checker rule rejects
-the same actor and records the denied attempt. Compatibility of issuer and
-subject identifiers is only a prerequisite: deployment must guarantee that
-one person has one stable subject across all clients and audiences allowed to
-use this API. Different subjects do not establish separation of duties if the
-identity provider can issue multiple subjects to the same person.
-
-Legacy approvals are not automatically linked to OIDC users. They require a
-separately designed and verified identity migration. Provenance mismatch
+A database provenance value is not authentication. Provenance mismatch
 refusals do not currently create a separate denied-attempt audit event.
 
-Service-level tests cover submission provenance, same-actor denial, compatible
-and incompatible issuers, mixed legacy/OIDC identities, and missing
-provenance. Real-HTTP approval workflow tests remain required before the
-Phase 8 security gate. The `dev` profile is unsecured and is not suitable for
-production.
+### Identity-provider requirement
 
-## OIDC approval HTTP verification
+The deployment must establish that one person has one stable subject across
+all clients and audiences accepted by this API. Different subjects do not
+prove different people if the provider can issue multiple subjects to one
+person. This requirement is an operational identity-provider contract; the
+application cannot establish it from a token alone.
 
-`OidcSecurityHttpIT` includes an approval workflow using signed JWTs, the
-actual HTTP security chain, and PostgreSQL. It checks persisted maker
-provenance, self-approval and self-rejection, spoofed actor headers, approval
-by a different controller, and refusal to decide a legacy approval using an
-OIDC identity.
+Historical legacy identities are not automatically linked to OIDC subjects.
+Existing legacy pending approvals need a separately designed and verified
+migration or operational resolution. Do not infer that two identifiers
+represent different people merely because their identity schemes or issuers
+differ.
 
-Run the test and the full Maven verification gate before treating this
-checkpoint as verified. The stable-subject requirement and other Phase 8
-limitations described above remain applicable.
+## Verification
 
-## Explicit audit, report and Actuator routes
+The test suite includes:
 
-The OIDC security chain lists the current audit and report route shapes
-rather than granting a role access to every path beneath those prefixes.
-Actuator access is limited to GET requests for the configured health, info,
-metrics and Prometheus endpoint shapes, and requires ADMIN.
+- Signed-token validation, invalid signature, issuer, audience and expiry
+  scenarios.
+- An OIDC HTTP role matrix and representative unknown route and method
+  checks.
+- Actor-header spoofing and maker-checker HTTP scenarios.
+- PostgreSQL tests for approval provenance, migration, and transactional
+  rollback.
+- Authenticated ingestion, reconciliation, case-intake, exception,
+  controlled-resolution, and process-recovery workflows.
+- Default-deny tests, including the `dev` profile with the former opt-in
+  flag set.
 
-Audit history accepts two path variables, and health and metrics accept a
-single component or metric name. Those variable segments are intentionally
-matched as such. A new endpoint or management operation needs an explicit
-security rule and tests.
+`TestOidcIssuer` and the local JWK servers are test fixtures using ephemeral
+keys; they are not production identity providers.
 
-`OidcSecurityHttpIT` checks representative unlisted paths and a denied
-Actuator method. Run the HTTP suite and full Maven verification before
-considering this change verified. Phase 8 remains in progress.
+Targeted tests validate particular changes. The combined checkpoint requires
+`mvn clean verify`, including configured coverage checks, followed by its
+GitHub Actions result. Results should be attributed to the exact commit or
+working-tree state that was tested.
 
-## Explicit opt-in for unsecured dev compatibility
+## Remaining work
 
-The `dev` compatibility HTTP chain is unsecured. Starting the application with
-`dev` and without `oidc` now requires the explicit property
-`payments.security.allow-insecure-dev=true`; otherwise startup fails.
-
-The opt-in is an accidental-configuration safeguard, not authentication or a
-production security boundary. Do not set it in a production deployment.
-Existing legacy integration tests use a test-only `application-dev.properties`
-to enable the compatibility chain. The process-recovery test also depends on
-that test classpath configuration.
-
-`DevProfileGuardIT` checks that an explicit false value prevents startup.
-The compatibility chain and header-based behavior still need to be removed
-after the affected tests are migrated to authenticated requests.
-
-## Authenticated process-recovery test
-
-`ProcessKillRecoveryIT` starts its child application with the OIDC profile.
-It supplies a locally generated test key through a local JWK endpoint and
-uses a signed admin token for readiness and ingestion requests. It also
-checks that an anonymous request is rejected.
-
-The test still kills the child while an ingestion transaction is open, checks
-that no partial ingestion remains, and verifies a successful retry after
-restart. Run the targeted test and full Maven verification before treating
-this migration as verified.
-
-Other functional tests still use the unsecured `dev` compatibility profile.
-That profile and its test-only opt-in have not yet been removed.
-
-## Authenticated ingestion integration tests
-
-`IngestionApiIT` uses the OIDC profile and a test-only local JWK endpoint.
-Its existing ingestion and concurrency requests use signed admin tokens. A
-separate test checks that anonymous and analyst uploads are denied without
-persisting ingestion data.
-
-`TestOidcIssuer` is a test fixture that generates an ephemeral RSA key and
-synthetic tokens. It is not used by the application at runtime. Other legacy
-API integration suites still use the unsecured `dev` compatibility profile.
-Run the targeted suite and full Maven verification before considering this
-migration verified.
-
-## Authenticated reconciliation and intake tests
-
-`ReconciliationApiIT` and `CaseIntakeApiIT` use the OIDC profile and the
-test-only local issuer. Their existing business workflows use signed admin
-tokens. Additional tests check that anonymous and analyst requests cannot
-start reconciliation runs or open cases, respectively.
-
-The exception and controlled-resolution legacy API suites still use the
-unsecured `dev` compatibility profile. Run the targeted suites and full
-Maven verification before considering this batch verified.
-
-## Authenticated exception API tests
-
-`ExceptionApiIT` uses the OIDC profile and the shared test issuer. Its
-synthetic case-action actors have TEAM_LEAD tokens because the existing
-workflow exercises assignment, escalation and unmatching as well as
-investigation and matching. Setup requests use an ADMIN token. Anonymous
-case writes are expected to return 401.
-
-The controlled-resolution legacy API suite still uses the unsecured `dev`
-compatibility profile. Run the targeted exception suite before treating this
-migration as verified; the full verification gate remains required for the
-combined checkpoint.
-
-## Authenticated controlled-resolution API tests
-
-`ControlledResolutionApiIT` uses signed tokens from the test-only issuer.
-Its synthetic users have explicit ADMIN, ANALYST, TEAM_LEAD, CONTROLLER and
-AUDITOR roles. Maker and checker assertions use the opaque IDs derived from
-the verified issuer and subject.
-
-The suite retains the existing maker-checker, audit, concurrency and role
-denial scenarios. Anonymous requests and tokens with an unrecognized role
-are expected to fail authentication. Run the targeted suite before treating
-the migration as verified. The combined checkpoint still requires the full
-Maven verification gate.
+- Review the complete route policy and token contract against deployment
+  requirements, including the identity provider's stable-subject guarantee.
+- Design and verify a safe operational approach for historical legacy
+  approvals and actor identity migration.
+- Decide whether provenance-mismatch refusals need their own audit evidence.
+- Complete the Phase 8 security review and verification gate before treating
+  the OIDC profile as production-ready.

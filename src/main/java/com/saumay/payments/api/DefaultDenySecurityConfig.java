@@ -10,11 +10,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Denies HTTP access when neither OIDC nor the temporary development
- * compatibility profile is active.
+ * Denies HTTP access whenever the OIDC profile is not active.
  */
 @Configuration
-@Profile("!dev & !oidc")
+@Profile("!oidc")
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class DefaultDenySecurityConfig {
 

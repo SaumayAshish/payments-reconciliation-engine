@@ -21,7 +21,7 @@ Banks lose analyst hours every day matching statement lines to ledger entries, c
 | 5 | Audit chain, maker-checker | Complete and approved | CI for commit `10fd859` |
 | 6 | Reporting, metrics, structured logs | Complete and approved | CI for commit `f0060b8` |
 | 7 | Kafka and transactional outbox | Complete | CI for commit `c6d9186` |
-| 8 | Authentication and RBAC | In progress | OIDC HTTP verification in progress; compatibility mode remains unsecured |
+| 8 | Authentication and RBAC | In progress | OIDC workflows tested; security and identity-migration review remains |
 | 9 | Thin dashboard | Not started | |
 | 10 | Performance and reliability runs | Not started | |
 | 11 | Production polish | Not started | |
@@ -56,6 +56,7 @@ for separately recorded matching measurements.
 | [Approval configuration](docs/phase5-configuration.md) | Versioned approval thresholds |
 | [Phase 6 reporting](docs/phase6-reporting.md) | Current-snapshot reporting and SLA job |
 | [Phase 7 events](docs/phase7-events.md) | Transactional outbox and event delivery |
+| [Phase 8 security](docs/phase8-security.md) | OIDC, authorization, identity provenance and limitations |
 | [RCA template](templates/rca-template.md) | Blameless incident analysis |
 
 ## Local setup (target experience, Phase 1 onward)
@@ -98,62 +99,17 @@ Event delivery is disabled by default. See [Phase 7 events](docs/phase7-events.m
 for configuration, retry behavior, operational limits and test coverage.
 The existing manual case-intake endpoint remains available.
 
+## Phase 8 security
 
-### Phase 8 approval identity checkpoint
+The experimental `oidc` profile validates signed JWTs and applies route
+authorization. Without OIDC, HTTP access is denied by default. The former
+unsecured development chain and header-based demo actor registry have been
+removed.
 
-OIDC approval submissions carry verified issuer provenance. Approval
-decisions require compatible maker and checker provenance; historical legacy
-identities are not automatically mapped to OIDC subjects. A stable
-one-person/one-subject identity-provider contract is required. The real-HTTP
-approval workflow and remaining Phase 8 security work are still outstanding.
-See `docs/phase8-security.md`.
+Approval submissions record maker identity provenance. OIDC maker-checker
+decisions require compatible provenance and a stable identity-provider
+subject contract. Historical legacy approvals are not automatically mapped
+to OIDC identities.
 
-### OIDC approval HTTP test
-
-The OIDC integration suite includes a signed-token maker-checker workflow.
-Run the suite and the full Maven verification gate to validate the current
-checkout. Phase 8 remains in progress; see `docs/phase8-security.md`.
-
-### Explicit security route policies
-
-The experimental OIDC profile specifies the current audit, report and
-Actuator route shapes. New routes need an explicit authorization rule and
-tests. See `docs/phase8-security.md` for the current security limitations.
-
-### Development compatibility safeguard
-
-The legacy `dev` HTTP profile is unsecured and requires an explicit
-`payments.security.allow-insecure-dev=true` opt-in. The setting exists in
-test resources for legacy integration tests; it must not be used in
-production. Phase 8 still includes migrating those tests and removing the
-compatibility path.
-
-### Authenticated recovery testing
-
-The process-kill recovery test uses the OIDC profile with a local test-only
-JWK endpoint and signed token. Other legacy functional tests still require
-the unsecured `dev` compatibility profile. See `docs/phase8-security.md`.
-
-### Authenticated ingestion testing
-
-The ingestion API integration suite uses the OIDC profile with a local
-test-only signing key and JWK endpoint. Other legacy API suites still need
-migration. See `docs/phase8-security.md`.
-
-### Authenticated reconciliation and intake testing
-
-The reconciliation and case-intake HTTP integration suites use signed
-test tokens with the OIDC profile. The remaining legacy API suites still
-need migration; see `docs/phase8-security.md`.
-
-### Authenticated exception testing
-
-The exception API integration suite uses signed OIDC test tokens for its
-case workflows. Controlled-resolution legacy tests still need migration;
-see `docs/phase8-security.md`.
-
-### Authenticated controlled-resolution testing
-
-The controlled-resolution HTTP integration suite uses signed OIDC test
-tokens for maker-checker, audit and role scenarios. See
-`docs/phase8-security.md` for the remaining Phase 8 work.
+Phase 8 remains in progress. See [Phase 8 security](docs/phase8-security.md)
+for configuration, test coverage, and remaining limitations.

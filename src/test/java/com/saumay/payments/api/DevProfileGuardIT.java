@@ -1,9 +1,13 @@
 package com.saumay.payments.api;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.saumay.payments.PaymentsApplication;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -12,61 +16,73 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * The legacy dev profile is intentionally unsecured. Starting it requires
- * an explicit opt-in, even when test resources normally enable that opt-in.
+ * The dev profile and the former compatibility flag must not enable
+ * unauthenticated HTTP access.
  */
 class DevProfileGuardIT {
 
     private static PostgreSQLContainer postgres;
+    private static ConfigurableApplicationContext context;
+    private static HttpClient http;
+    private static String base;
 
     @BeforeAll
-    static void startDatabase() {
+    static void start() {
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
+
+        context = SpringApplication.run(PaymentsApplication.class,
+                "--server.port=0",
+                "--spring.profiles.active=dev",
+                "--payments.security.allow-insecure-dev=true",
+                "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                "--spring.datasource.username=" + postgres.getUsername(),
+                "--spring.datasource.password=" + postgres.getPassword());
+
+        http = HttpClient.newHttpClient();
+        base = "http://127.0.0.1:"
+                + context.getEnvironment().getProperty("local.server.port");
     }
 
     @AfterAll
-    static void stopDatabase() {
+    static void stop() {
+        if (context != null) {
+            context.close();
+        }
         if (postgres != null) {
             postgres.stop();
         }
     }
 
     @Test
-    void devProfileWithoutExplicitOptInFailsToStart() {
-        Exception failure = assertThrows(Exception.class, () -> {
-            try (ConfigurableApplicationContext context = SpringApplication.run(
-                    PaymentsApplication.class,
-                    "--server.port=0",
-                    "--spring.profiles.active=dev",
-                    "--payments.security.allow-insecure-dev=false",
-                    "--spring.datasource.url=" + postgres.getJdbcUrl(),
-                    "--spring.datasource.username=" + postgres.getUsername(),
-                    "--spring.datasource.password=" + postgres.getPassword())) {
-                // If startup succeeds, assertThrows fails. Referencing the
-                // resource also avoids the compiler's unused-resource warning.
-                context.getId();
-            }
-        });
-
-        assertTrue(
-                hasGuardMessage(failure),
-                "Startup must fail because the insecure dev opt-in is absent: " + failure);
+    void devProfileAndFormerOptInStillDenyAnonymousRequests() throws Exception {
+        assertDenied("/api/v1/exceptions");
+        assertDenied("/actuator/health");
     }
 
-    private static boolean hasGuardMessage(Throwable failure) {
-        Throwable current = failure;
+    @Test
+    void actorHeaderCannotBypassDevProfileDefaultDeny() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create(base + "/api/v1/exceptions"))
+                .header("X-Actor", "root")
+                .GET()
+                .build();
 
-        while (current != null) {
-            if (current.getMessage() != null
-                    && current.getMessage().contains(
-                    "The dev profile is unsecured and requires "
-                            + "payments.security.allow-insecure-dev=true")) {
-                return true;
-            }
-            current = current.getCause();
-        }
+        HttpResponse<String> response =
+                http.send(request, HttpResponse.BodyHandlers.ofString());
 
-        return false;
+        assertEquals(401, response.statusCode(), response.body());
+        assertTrue(response.body().contains("AUTHENTICATION_REQUIRED"), response.body());
+    }
+
+    private static void assertDenied(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
+                .GET()
+                .build();
+
+        HttpResponse<String> response =
+                http.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(401, response.statusCode(), path + ": " + response.body());
     }
 }

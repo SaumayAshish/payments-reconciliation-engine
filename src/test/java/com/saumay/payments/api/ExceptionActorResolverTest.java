@@ -79,17 +79,20 @@ class ExceptionActorResolverTest {
     }
 
     @Test
-    void legacyHeaderBehaviorRemainsWhenThereIsNoSecurityContext() {
+    void noSecurityContextCannotUseAnActorHeader() {
         SecurityContextHolder.clearContext();
 
-        assertEquals("alice", ExceptionActorResolver.resolve(" alice "));
+        ApiException suppliedHeader = assertThrows(
+                ApiException.class,
+                () -> ExceptionActorResolver.resolve("alice"));
+        assertEquals(HttpStatus.UNAUTHORIZED, suppliedHeader.status());
+        assertEquals("AUTHENTICATION_REQUIRED", suppliedHeader.code());
 
-        ApiException error = assertThrows(
+        ApiException missingHeader = assertThrows(
                 ApiException.class,
                 () -> ExceptionActorResolver.resolve(null));
-
-        assertEquals(HttpStatus.BAD_REQUEST, error.status());
-        assertEquals("ACTOR_REQUIRED", error.code());
+        assertEquals(HttpStatus.UNAUTHORIZED, missingHeader.status());
+        assertEquals("AUTHENTICATION_REQUIRED", missingHeader.code());
     }
 
     private static void setAuthentication(Object principal, boolean authenticated) {
