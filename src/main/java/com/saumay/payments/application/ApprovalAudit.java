@@ -33,6 +33,14 @@ final class ApprovalAudit {
         return new AuditNote("APPROVAL_DENIED", state, CanonicalJson.write(state(request.id(), request, attemptedBy)));
     }
 
+    /** Identity provenance cannot safely be compared; the request remains unchanged. */
+    static AuditNote identityMigrationDenied(ApprovalRequest request, String attemptedBy) {
+        String before = CanonicalJson.write(state(request.id(), request, null));
+        Map<String, Object> after = state(request.id(), request, attemptedBy);
+        after.put("denialReason", "IDENTITY_MIGRATION_REQUIRED");
+        return new AuditNote("APPROVAL_IDENTITY_MISMATCH", before, CanonicalJson.write(after));
+    }
+
     private static Map<String, Object> state(Long id, ApprovalRequest r, String deniedBy) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("id", id);

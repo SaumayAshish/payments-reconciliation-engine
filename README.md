@@ -113,3 +113,10 @@ to OIDC identities.
 
 Phase 8 remains in progress. See [Phase 8 security](docs/phase8-security.md)
 for configuration, test coverage, and remaining limitations.
+
+
+### Approval identity refusal evidence
+
+A pending approval decision refused because identity provenance cannot be
+safely compared records an `APPROVAL_IDENTITY_MISMATCH` audit event. The
+approval remains pending. See [Phase 8 security](docs/phase8-security.md).

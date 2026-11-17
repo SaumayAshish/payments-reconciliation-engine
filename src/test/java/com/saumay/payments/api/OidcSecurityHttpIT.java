@@ -469,6 +469,73 @@ class OidcSecurityHttpIT {
         assertEquals("PENDING", jdbc.queryForObject(
                 "SELECT status FROM approval_request WHERE id = ?",
                 String.class, legacyApprovalId));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM audit_event"
+                        + " WHERE entity_type = 'approval_request'"
+                        + " AND entity_id = ?"
+                        + " AND action = 'APPROVAL_IDENTITY_MISMATCH'"
+                        + " AND actor = ?",
+                Integer.class, Long.toString(legacyApprovalId), checkerId));
+
+        HttpResponse<String> legacyRejection = request(
+                "POST", "/api/v1/approvals/" + legacyApprovalId + "/reject",
+                checker, null, "application/json", "{\"note\":\"cannot verify identity\"}");
+        assertEquals(409, legacyRejection.statusCode(), legacyRejection.body());
+        assertTrue(legacyRejection.body().contains("IDENTITY_MIGRATION_REQUIRED"),
+                legacyRejection.body());
+
+        assertEquals(2, jdbc.queryForObject(
+                "SELECT count(*) FROM audit_event"
+                        + " WHERE entity_type = 'approval_request'"
+                        + " AND entity_id = ?"
+                        + " AND action = 'APPROVAL_IDENTITY_MISMATCH'"
+                        + " AND actor = ?"
+                        + " AND after_state::jsonb ->> 'denialReason' = 'IDENTITY_MIGRATION_REQUIRED'"
+                        + " AND after_state::jsonb ->> 'deniedBy' = ?",
+                Integer.class, Long.toString(legacyApprovalId), checkerId, checkerId));
+
+        // Force the database audit insert to fail. The approval decision must
+        // remain blocked, and the two previously committed events must remain.
+        jdbc.execute("CREATE FUNCTION test_fail_identity_audit() RETURNS trigger"
+                + " LANGUAGE plpgsql AS $$ BEGIN"
+                + " RAISE EXCEPTION 'simulated identity audit failure';"
+                + " END $$");
+
+        try {
+            jdbc.execute("CREATE TRIGGER trg_test_fail_identity_audit"
+                    + " BEFORE INSERT ON audit_event"
+                    + " FOR EACH ROW"
+                    + " WHEN (NEW.action = 'APPROVAL_IDENTITY_MISMATCH')"
+                    + " EXECUTE FUNCTION test_fail_identity_audit()");
+
+            HttpResponse<String> auditFailure = request(
+                    "POST", "/api/v1/approvals/" + legacyApprovalId + "/approve",
+                    checker, null, "application/json", "{}");
+            assertEquals(500, auditFailure.statusCode(), auditFailure.body());
+
+            assertEquals("PENDING", jdbc.queryForObject(
+                    "SELECT status FROM approval_request WHERE id = ?",
+                    String.class, legacyApprovalId));
+            assertEquals(2, jdbc.queryForObject(
+                    "SELECT count(*) FROM audit_event"
+                            + " WHERE entity_type = 'approval_request'"
+                            + " AND entity_id = ?"
+                            + " AND action = 'APPROVAL_IDENTITY_MISMATCH'",
+                    Integer.class, Long.toString(legacyApprovalId)));
+            assertEquals(0, jdbc.queryForObject(
+                    "SELECT count(*) FROM line_claim WHERE case_id = ?",
+                    Integer.class, legacyCaseId));
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS trg_test_fail_identity_audit ON audit_event");
+            jdbc.execute("DROP FUNCTION IF EXISTS test_fail_identity_audit()");
+        }
+
+        HttpResponse<String> auditVerification = request(
+                "GET", "/api/v1/audit/verify", admin,
+                null, null, null);
+        assertEquals(200, auditVerification.statusCode(), auditVerification.body());
+        assertTrue(auditVerification.body().contains("\"status\":\"OK\""),
+                auditVerification.body());
     }
     @Test
     void everyListedEndpointEnforcesItsRoleMatrix() throws Exception {

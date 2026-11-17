@@ -343,6 +343,44 @@ class ControlledResolutionServiceTest {
         assertTrue(approvals.approved.isEmpty());
     }
 
+    @Test
+    void incompatibleIdentityDecisionsAreAuditedAndLeaveTheRequestPending() {
+        ApprovalStore.IdentityProvenance oidc =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example");
+        String checker = "oidc-" + "b".repeat(64);
+        approvals.requests.put(1L, pendingFor("legacy-maker"));
+
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.approve(1, checker, null, oidc)));
+        assertEquals("IDENTITY_MIGRATION_REQUIRED",
+                codeOf(() -> service.reject(1, checker, "no", oidc)));
+
+        assertEquals(2, approvals.denied.size());
+        for (DeniedAttempt attempt : approvals.denied) {
+            assertEquals(checker, attempt.actor());
+            assertEquals("APPROVAL_IDENTITY_MISMATCH", attempt.audit().action());
+            assertTrue(attempt.audit().afterState().contains("IDENTITY_MIGRATION_REQUIRED"));
+        }
+        assertEquals(ApprovalStatus.PENDING, approvals.requests.get(1L).status());
+        assertTrue(approvals.approved.isEmpty());
+        assertTrue(approvals.rejected.isEmpty());
+    }
+
+    @Test
+    void failedIdentityDenialAuditCannotAllowTheDecision() {
+        ApprovalStore.IdentityProvenance oidc =
+                ApprovalStore.IdentityProvenance.oidc("https://issuer.example");
+        approvals.requests.put(1L, pendingFor("legacy-maker"));
+        approvals.failDeniedAudit = true;
+
+        assertThrows(IllegalStateException.class,
+                () -> service.approve(1, "oidc-" + "b".repeat(64), null, oidc));
+
+        assertEquals(ApprovalStatus.PENDING, approvals.requests.get(1L).status());
+        assertTrue(approvals.approved.isEmpty());
+        assertTrue(approvals.rejected.isEmpty());
+    }
+
     private static final class FakeApprovals implements ApprovalStore {
         CaseFacts facts = new CaseFacts(CaseStatus.INVESTIGATING, 3, OVER, "GBP");
         final Map<Long, ApprovalRequest> requests = new HashMap<>();
@@ -351,6 +389,7 @@ class ControlledResolutionServiceTest {
         final List<Rejection> rejected = new ArrayList<>();
         final List<DeniedAttempt> denied = new ArrayList<>();
         IdentityProvenance makerProvenance = IdentityProvenance.legacy();
+        boolean failDeniedAudit;
         SubmitOutcome submitOutcome = SubmitOutcome.SUBMITTED;
         DecisionOutcome decisionOutcome = DecisionOutcome.DECIDED;
 
@@ -402,6 +441,9 @@ class ControlledResolutionServiceTest {
 
         @Override
         public void recordDenied(DeniedAttempt attempt, Instant at) {
+            if (failDeniedAudit) {
+                throw new IllegalStateException("simulated audit failure");
+            }
             denied.add(attempt);
         }
     }

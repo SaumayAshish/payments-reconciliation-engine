@@ -194,16 +194,20 @@ public final class ControlledResolutionService {
         }
 
         IdentityProvenance makerProvenance = approvals.findMakerProvenance(request.id())
-                .orElseThrow(ControlledResolutionService::identityMigrationRequired);
-
-        if (!makerProvenance.equals(checkerProvenance)) {
-            throw identityMigrationRequired();
-        }
+                .orElse(null);
 
         // A legacy caller cannot claim the reserved OIDC-shaped namespace.
         // This check never authenticates an OIDC actor.
-        if (checkerProvenance.scheme() == IdentityScheme.LEGACY
-                && checker.matches("oidc-[0-9a-f]{64}")) {
+        boolean reservedLegacyIdentity = checkerProvenance.scheme() == IdentityScheme.LEGACY
+                && checker.matches("oidc-[0-9a-f]{64}");
+
+        if (makerProvenance == null
+                || !makerProvenance.equals(checkerProvenance)
+                || reservedLegacyIdentity) {
+            approvals.recordDenied(
+                    new DeniedAttempt(request.id(), checker,
+                            ApprovalAudit.identityMigrationDenied(request, checker)),
+                    clock.instant());
             throw identityMigrationRequired();
         }
     }

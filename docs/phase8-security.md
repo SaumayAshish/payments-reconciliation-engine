@@ -61,8 +61,12 @@ incompatible provenance is refused with `IDENTITY_MIGRATION_REQUIRED`.
 Within a compatible context, the existing maker-checker rule rejects the
 same actor and records the denied attempt.
 
-A database provenance value is not authentication. Provenance mismatch
-refusals do not currently create a separate denied-attempt audit event.
+A database provenance value is not authentication. A pending decision
+refused because provenance is missing or incompatible records an
+`APPROVAL_IDENTITY_MISMATCH` audit event. If that audit write fails, the
+decision remains blocked and the error propagates. The OIDC HTTP integration
+suite checks both approval and rejection refusals, stored audit details, and
+a forced PostgreSQL audit-write failure.
 
 ### Identity-provider requirement
 
@@ -108,6 +112,7 @@ working-tree state that was tested.
   requirements, including the identity provider's stable-subject guarantee.
 - Design and verify a safe operational approach for historical legacy
   approvals and actor identity migration.
-- Decide whether provenance-mismatch refusals need their own audit evidence.
+- Review the operational handling and monitoring of provenance-mismatch
+  audit events and failed audit writes.
 - Complete the Phase 8 security review and verification gate before treating
   the OIDC profile as production-ready.
