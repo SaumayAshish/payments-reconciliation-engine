@@ -37,9 +37,13 @@ integration suite checks that a redirect target is not contacted and that
 the redirect response cannot authenticate a token.
 
 The HTTP suite also checks that a token with a newly published key ID causes
-another JWK fetch and can be authenticated. This does not establish immediate
-revocation of a removed key: deployments must account for decoder caching,
-token lifetime, and their identity provider's key-rotation procedures.
+another JWK fetch and can be authenticated. It checks that an unavailable or
+malformed JWK response does not authenticate a token and that authentication
+can recover after the endpoint returns a valid key set.
+
+These tests do not establish immediate revocation of a removed key:
+deployments must account for decoder caching, token lifetime, and their
+identity provider's key-rotation procedures.
 
 ### Token-purpose limitation
 
@@ -107,7 +111,8 @@ Historical legacy identities are not automatically linked to OIDC subjects.
 Existing legacy pending approvals need a separately designed and verified
 migration or operational resolution. Do not infer that two identifiers
 represent different people merely because their identity schemes or issuers
-differ.
+differ. See the read-only
+[identity-migration assessment runbook](identity-migration-runbook.md).
 
 ## Verification
 

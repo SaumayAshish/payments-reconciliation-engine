@@ -314,6 +314,101 @@ class OidcSecurityHttpIT {
     }
 
     @Test
+    void jwkEndpointFailureDoesNotAuthenticateAndAHealthyEndpointRecovers() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger mode =
+                new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger fetches =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        RSAKey publicJwk = new RSAKey.Builder((RSAPublicKey) trustedKey.getPublic())
+                .keyID(KEY_ID)
+                .build();
+        byte[] validJwks = new JWKSet(publicJwk).toString()
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] unavailable = "temporarily unavailable".getBytes(StandardCharsets.UTF_8);
+        byte[] malformed = "{not-json".getBytes(StandardCharsets.UTF_8);
+
+        HttpServer changingServer = HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+
+        try {
+            changingServer.createContext("/jwks", exchange -> {
+                try {
+                    fetches.incrementAndGet();
+                    int currentMode = mode.get();
+                    byte[] body = currentMode == 0
+                            ? unavailable
+                            : currentMode == 1 ? malformed : validJwks;
+                    int status = currentMode == 0 ? 503 : 200;
+
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(status, body.length);
+
+                    try (var output = exchange.getResponseBody()) {
+                        output.write(body);
+                    }
+                } finally {
+                    exchange.close();
+                }
+            });
+            changingServer.start();
+
+            try (ConfigurableApplicationContext changingContext = SpringApplication.run(
+                    PaymentsApplication.class,
+                    "--server.port=0",
+                    "--spring.profiles.active=oidc",
+                    "--payments.security.allow-insecure-loopback-jwks=true",
+                    "--payments.security.issuer=" + ISSUER,
+                    "--payments.security.audience=" + AUDIENCE,
+                    "--payments.security.jwk-set-uri=http://127.0.0.1:"
+                            + changingServer.getAddress().getPort() + "/jwks",
+                    "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                    "--spring.datasource.username=" + postgres.getUsername(),
+                    "--spring.datasource.password=" + postgres.getPassword())) {
+
+                String changingBase = "http://127.0.0.1:"
+                        + changingContext.getEnvironment().getProperty("local.server.port");
+
+                String bearer = token(
+                        trustedKey, ISSUER, AUDIENCE, "jwk-recovery-admin",
+                        List.of("ADMIN"), Instant.now().plusSeconds(600));
+
+                HttpRequest request = HttpRequest.newBuilder(
+                                URI.create(changingBase + "/api/v1/exceptions"))
+                        .header("Authorization", "Bearer " + bearer)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> unavailableResponse =
+                        http.send(request, HttpResponse.BodyHandlers.ofString());
+                assertTrue(unavailableResponse.statusCode() >= 400,
+                        unavailableResponse.body());
+                assertTrue(!unavailableResponse.body().contains(bearer),
+                        unavailableResponse.body());
+
+                mode.set(1);
+
+                HttpResponse<String> malformedResponse =
+                        http.send(request, HttpResponse.BodyHandlers.ofString());
+                assertTrue(malformedResponse.statusCode() >= 400,
+                        malformedResponse.body());
+                assertTrue(!malformedResponse.body().contains(bearer),
+                        malformedResponse.body());
+
+                mode.set(2);
+
+                HttpResponse<String> recovered =
+                        http.send(request, HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, recovered.statusCode(), recovered.body());
+                assertTrue(fetches.get() >= 3,
+                        "The decoder must fetch again after failed JWK responses");
+            }
+        } finally {
+            changingServer.stop(0);
+        }
+    }
+
+    @Test
     void aNewSigningKeyIsFetchedWhenItsKeyIdChanges() throws Exception {
         String firstKeyId = "rotation-key-one";
         String secondKeyId = "rotation-key-two";

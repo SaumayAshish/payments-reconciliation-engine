@@ -57,6 +57,7 @@ for separately recorded matching measurements.
 | [Phase 6 reporting](docs/phase6-reporting.md) | Current-snapshot reporting and SLA job |
 | [Phase 7 events](docs/phase7-events.md) | Transactional outbox and event delivery |
 | [Phase 8 security](docs/phase8-security.md) | OIDC, authorization, identity provenance and limitations |
+| [Identity-migration assessment](docs/identity-migration-runbook.md) | Read-only assessment of blocked legacy approvals |
 | [RCA template](templates/rca-template.md) | Blameless incident analysis |
 
 ## Local setup (target experience, Phase 1 onward)
