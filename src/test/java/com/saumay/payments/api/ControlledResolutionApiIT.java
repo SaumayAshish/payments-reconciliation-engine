@@ -44,17 +44,32 @@ class ControlledResolutionApiIT {
 
     private static PostgreSQLContainer postgres;
     private static ConfigurableApplicationContext context;
+    private static TestOidcIssuer issuer;
+    private static java.util.Map<String, String> tokens;
     private static JdbcTemplate jdbc;
     private static HttpClient http;
     private static String base;
 
     @BeforeAll
-    static void start() {
+    static void start() throws Exception {
+        issuer = new TestOidcIssuer();
+        tokens = java.util.Map.of(
+                "root", issuer.token("root", "ADMIN"),
+                "alice", issuer.token("alice", "ANALYST"),
+                "bob", issuer.token("bob", "TEAM_LEAD"),
+                "carol", issuer.token("carol", "CONTROLLER"),
+                "dave", issuer.token("dave", "CONTROLLER"),
+                "erin", issuer.token("erin", "AUDITOR"),
+                "mallory", issuer.token("mallory", "UNKNOWN"));
+
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
-                "--spring.profiles.active=dev",
+                "--spring.profiles.active=oidc",
+                "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword());
@@ -70,6 +85,9 @@ class ControlledResolutionApiIT {
         }
         if (postgres != null) {
             postgres.stop();
+        }
+        if (issuer != null) {
+            issuer.close();
         }
     }
 
@@ -124,7 +142,7 @@ class ControlledResolutionApiIT {
 
         assertEquals(202, response.statusCode(), response.body());
         assertEquals("PENDING", text(response.body(), "status"));
-        assertEquals("alice", text(response.body(), "maker"));
+        assertEquals(OidcActorId.fromVerifiedClaims(TestOidcIssuer.ISSUER, "alice"), text(response.body(), "maker"));
         assertTrue(response.headers().firstValue("Location").orElse("").startsWith("/api/v1/approvals/"));
         assertEquals("INVESTIGATING", caseValue(id, "status"));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM line_claim WHERE case_id = ?", Integer.class, id));
@@ -156,7 +174,7 @@ class ControlledResolutionApiIT {
 
         assertEquals(200, approved.statusCode(), approved.body());
         assertEquals("APPROVED", text(approved.body(), "status"));
-        assertEquals("dave", text(approved.body(), "checker"));
+        assertEquals(OidcActorId.fromVerifiedClaims(TestOidcIssuer.ISSUER, "dave"), text(approved.body(), "checker"));
         assertEquals("RESOLVED", caseValue(id, "status"));
         assertEquals("WRITE_OFF", caseValue(id, "resolution_type"));
         assertEquals(1, jdbc.queryForObject(
@@ -188,16 +206,16 @@ class ControlledResolutionApiIT {
     }
 
     @Test
-    void theActingUserMustBePresentAndKnown() throws Exception {
+    void theActingUserMustBeAuthenticatedWithARecognizedRole() throws Exception {
         long id = investigating(caseOf(SMALL));
-        HttpResponse<String> none = call("POST", "/api/v1/exceptions/" + id + "/resolve", null, "application/json",
-                resolveBody(id, "WRITE_OFF"));
-        assertEquals(400, none.statusCode());
-        assertEquals("ACTOR_REQUIRED", text(none.body(), "code"));
+        HttpResponse<String> none = call("POST", "/api/v1/exceptions/" + id + "/resolve",
+                "anonymous", "application/json", resolveBody(id, "WRITE_OFF"));
+        assertEquals(401, none.statusCode());
+        assertEquals("AUTHENTICATION_REQUIRED", text(none.body(), "code"));
 
         HttpResponse<String> unknown = resolve(id, "mallory", "WRITE_OFF");
         assertEquals(401, unknown.statusCode());
-        assertEquals("UNKNOWN_ACTOR", text(unknown.body(), "code"));
+        assertEquals("AUTHENTICATION_REQUIRED", text(unknown.body(), "code"));
         assertEquals("INVESTIGATING", caseValue(id, "status"));
     }
 
@@ -269,7 +287,7 @@ class ControlledResolutionApiIT {
         long id = investigating(caseOf(SMALL));
         assertEquals(200, resolve(id, "alice", "WRITE_OFF").statusCode());
 
-        HttpResponse<String> response = call("POST", "/api/v1/exceptions/" + id + "/unmatch", "alice",
+        HttpResponse<String> response = call("POST", "/api/v1/exceptions/" + id + "/unmatch", "bob",
                 "application/json", "{\"reason\":\"changed my mind\"}");
 
         assertEquals(409, response.statusCode(), response.body());
@@ -287,7 +305,7 @@ class ControlledResolutionApiIT {
         List<String> beforeActions = auditActions("exception_case");
 
         HttpResponse<String> response = call("POST", "/api/v1/exceptions/" + id + "/escalate",
-                "alice", "application/json",
+                "bob", "application/json",
                 "{\"expectedVersion\":" + beforeVersion + ",\"reason\":\"needs review\"}");
 
         assertEquals(409, response.statusCode(), response.body());
@@ -681,7 +699,7 @@ class ControlledResolutionApiIT {
     }
 
     private long investigating(long caseId) throws Exception {
-        HttpResponse<String> assigned = call("POST", "/api/v1/exceptions/" + caseId + "/assign", "alice",
+        HttpResponse<String> assigned = call("POST", "/api/v1/exceptions/" + caseId + "/assign", "bob",
                 "application/json", "{\"expectedVersion\":" + version(caseId) + ",\"owner\":\"alice\",\"reason\":\"t\"}");
         assertEquals(200, assigned.statusCode(), assigned.body());
         HttpResponse<String> started = call("POST", "/api/v1/exceptions/" + caseId + "/investigate", "alice",
@@ -701,10 +719,18 @@ class ControlledResolutionApiIT {
 
     private static HttpResponse<String> call(String method, String path, String actor, String contentType,
             String body) throws Exception {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path)).header("Content-Type", contentType);
-        if (actor != null) {
-            builder.header("X-Actor", actor);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path))
+                .header("Content-Type", contentType);
+
+        if (!"anonymous".equals(actor)) {
+            String key = actor == null ? "root" : actor.toLowerCase(java.util.Locale.ROOT);
+            String token = tokens.get(key);
+            if (token == null) {
+                throw new IllegalArgumentException("Unknown test actor: " + actor);
+            }
+            builder.header("Authorization", "Bearer " + token);
         }
+
         builder.method(method, body == null ? BodyPublishers.noBody() : BodyPublishers.ofString(body));
         return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }

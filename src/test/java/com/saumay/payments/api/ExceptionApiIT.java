@@ -47,18 +47,32 @@ class ExceptionApiIT {
 
     private static PostgreSQLContainer postgres;
     private static ConfigurableApplicationContext context;
+    private static TestOidcIssuer issuer;
+    private static String adminToken;
+    private static String aliceToken;
+    private static String leadToken;
+    private static String bobToken;
     private static JdbcTemplate jdbc;
     private static HttpClient http;
     private static String base;
     private static long runId;
 
     @BeforeAll
-    static void start() {
+    static void start() throws Exception {
+        issuer = new TestOidcIssuer();
+        adminToken = issuer.token("exception-admin", "ADMIN");
+        aliceToken = issuer.token("alice", "TEAM_LEAD");
+        leadToken = issuer.token("lead", "TEAM_LEAD");
+        bobToken = issuer.token("bob", "TEAM_LEAD");
+
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
-                "--spring.profiles.active=dev",
+                "--spring.profiles.active=oidc",
+                "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword());
@@ -74,6 +88,9 @@ class ExceptionApiIT {
         }
         if (postgres != null) {
             postgres.stop();
+        }
+        if (issuer != null) {
+            issuer.close();
         }
     }
 
@@ -115,13 +132,13 @@ class ExceptionApiIT {
     }
 
     @Test
-    void writesNeedAnActor() throws Exception {
+    void writesRequireAuthentication() throws Exception {
         long id = caseFor("ONLY-A");
 
         assertError(act(CASES + "/" + id + "/assign", null, "{\"expectedVersion\":0,\"owner\":\"alice\"}"),
-                400, "ACTOR_REQUIRED");
+                401, "AUTHENTICATION_REQUIRED");
         assertError(act(CASES + "/" + id + "/assign", "  ", "{\"expectedVersion\":0,\"owner\":\"alice\"}"),
-                400, "ACTOR_REQUIRED");
+                401, "AUTHENTICATION_REQUIRED");
     }
 
     @Test
@@ -432,17 +449,29 @@ class ExceptionApiIT {
     }
 
     private static HttpResponse<String> act(String path, String actor, String body) throws Exception {
+        if (actor == null || actor.isBlank()) {
+            HttpRequest anonymous = HttpRequest.newBuilder(URI.create(base + path))
+                    .header("Content-Type", "application/json")
+                    .POST(BodyPublishers.ofString(body))
+                    .build();
+            return http.send(anonymous, HttpResponse.BodyHandlers.ofString());
+        }
         return call("POST", path, actor, "application/json", body);
     }
 
     private static HttpResponse<String> call(String method, String path, String actor, String contentType,
             String body) throws Exception {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path));
+        String token = actor == null ? adminToken : switch (actor) {
+            case "alice" -> aliceToken;
+            case "lead" -> leadToken;
+            case "bob" -> bobToken;
+            default -> throw new IllegalArgumentException("Unknown test actor: " + actor);
+        };
+
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path))
+                .header("Authorization", "Bearer " + token);
         if (contentType != null) {
             request.header("Content-Type", contentType);
-        }
-        if (actor != null) {
-            request.header("X-Actor", actor);
         }
         request.method(method, body == null ? BodyPublishers.noBody() : BodyPublishers.ofString(body));
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());

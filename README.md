@@ -139,3 +139,21 @@ the unsecured `dev` compatibility profile. See `docs/phase8-security.md`.
 The ingestion API integration suite uses the OIDC profile with a local
 test-only signing key and JWK endpoint. Other legacy API suites still need
 migration. See `docs/phase8-security.md`.
+
+### Authenticated reconciliation and intake testing
+
+The reconciliation and case-intake HTTP integration suites use signed
+test tokens with the OIDC profile. The remaining legacy API suites still
+need migration; see `docs/phase8-security.md`.
+
+### Authenticated exception testing
+
+The exception API integration suite uses signed OIDC test tokens for its
+case workflows. Controlled-resolution legacy tests still need migration;
+see `docs/phase8-security.md`.
+
+### Authenticated controlled-resolution testing
+
+The controlled-resolution HTTP integration suite uses signed OIDC test
+tokens for maker-checker, audit and role scenarios. See
+`docs/phase8-security.md` for the remaining Phase 8 work.

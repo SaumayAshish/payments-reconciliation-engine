@@ -311,3 +311,40 @@ synthetic tokens. It is not used by the application at runtime. Other legacy
 API integration suites still use the unsecured `dev` compatibility profile.
 Run the targeted suite and full Maven verification before considering this
 migration verified.
+
+## Authenticated reconciliation and intake tests
+
+`ReconciliationApiIT` and `CaseIntakeApiIT` use the OIDC profile and the
+test-only local issuer. Their existing business workflows use signed admin
+tokens. Additional tests check that anonymous and analyst requests cannot
+start reconciliation runs or open cases, respectively.
+
+The exception and controlled-resolution legacy API suites still use the
+unsecured `dev` compatibility profile. Run the targeted suites and full
+Maven verification before considering this batch verified.
+
+## Authenticated exception API tests
+
+`ExceptionApiIT` uses the OIDC profile and the shared test issuer. Its
+synthetic case-action actors have TEAM_LEAD tokens because the existing
+workflow exercises assignment, escalation and unmatching as well as
+investigation and matching. Setup requests use an ADMIN token. Anonymous
+case writes are expected to return 401.
+
+The controlled-resolution legacy API suite still uses the unsecured `dev`
+compatibility profile. Run the targeted exception suite before treating this
+migration as verified; the full verification gate remains required for the
+combined checkpoint.
+
+## Authenticated controlled-resolution API tests
+
+`ControlledResolutionApiIT` uses signed tokens from the test-only issuer.
+Its synthetic users have explicit ADMIN, ANALYST, TEAM_LEAD, CONTROLLER and
+AUDITOR roles. Maker and checker assertions use the opaque IDs derived from
+the verified issuer and subject.
+
+The suite retains the existing maker-checker, audit, concurrency and role
+denial scenarios. Anonymous requests and tokens with an unrecognized role
+are expected to fail authentication. Run the targeted suite before treating
+the migration as verified. The combined checkpoint still requires the full
+Maven verification gate.

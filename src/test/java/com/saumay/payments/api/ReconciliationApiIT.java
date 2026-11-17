@@ -45,17 +45,27 @@ class ReconciliationApiIT {
 
     private static PostgreSQLContainer postgres;
     private static ConfigurableApplicationContext context;
+    private static TestOidcIssuer issuer;
+    private static String adminToken;
+    private static String analystToken;
     private static JdbcTemplate jdbc;
     private static HttpClient http;
     private static String base;
 
     @BeforeAll
-    static void start() {
+    static void start() throws Exception {
+        issuer = new TestOidcIssuer();
+        adminToken = issuer.token("api-test-admin", "ADMIN");
+        analystToken = issuer.token("api-test-analyst", "ANALYST");
+
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
-                "--spring.profiles.active=dev",
+                "--spring.profiles.active=oidc",
+                "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword());
@@ -72,6 +82,9 @@ class ReconciliationApiIT {
         if (postgres != null) {
             postgres.stop();
         }
+        if (issuer != null) {
+            issuer.close();
+        }
     }
 
     @BeforeEach
@@ -79,6 +92,27 @@ class ReconciliationApiIT {
         jdbc.execute("TRUNCATE run_note, run_carried_forward, run_exception_line, run_exception, run_match_line,"
                 + " run_match, reconciliation_run_statement_batch, reconciliation_run, rejected_line,"
                 + " statement_line, ledger_entry, ingestion_file RESTART IDENTITY CASCADE");
+    }
+
+    @Test
+    void anonymousAndAnalystCannotStartAReconciliation() throws Exception {
+        URI uri = URI.create(base + RUNS);
+        String body = "{\"businessDate\":\"2026-10-09\",\"statementIngestionIds\":[1]}";
+
+        HttpRequest anonymous = HttpRequest.newBuilder(uri)
+                .header("Content-Type", "application/json")
+                .POST(BodyPublishers.ofString(body))
+                .build();
+
+        HttpRequest analyst = HttpRequest.newBuilder(uri)
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + analystToken)
+                .POST(BodyPublishers.ofString(body))
+                .build();
+
+        assertEquals(401, http.send(anonymous, HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(403, http.send(analyst, HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(0, count("reconciliation_run"));
     }
 
     @Test
@@ -310,6 +344,7 @@ class ReconciliationApiIT {
     private static long upload(String path, String csv) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
                 .header("Content-Type", "text/csv")
+                .header("Authorization", "Bearer " + adminToken)
                 .POST(BodyPublishers.ofString(csv))
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
@@ -320,13 +355,17 @@ class ReconciliationApiIT {
     private static HttpResponse<String> post(String path, String json) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + adminToken)
                 .POST(BodyPublishers.ofString(json))
                 .build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private static HttpResponse<String> get(String path) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create(base + path)).GET().build(),
+        return http.send(HttpRequest.newBuilder(URI.create(base + path))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 

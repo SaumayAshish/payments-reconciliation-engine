@@ -39,18 +39,28 @@ class CaseIntakeApiIT {
 
     private static PostgreSQLContainer postgres;
     private static ConfigurableApplicationContext context;
+    private static TestOidcIssuer issuer;
+    private static String adminToken;
+    private static String analystToken;
     private static JdbcTemplate jdbc;
     private static HttpClient http;
     private static String base;
     private static long runId;
 
     @BeforeAll
-    static void start() {
+    static void start() throws Exception {
+        issuer = new TestOidcIssuer();
+        adminToken = issuer.token("api-test-admin", "ADMIN");
+        analystToken = issuer.token("api-test-analyst", "ANALYST");
+
         postgres = new PostgreSQLContainer("postgres:17-alpine");
         postgres.start();
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
-                "--spring.profiles.active=dev",
+                "--spring.profiles.active=oidc",
+                "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword());
@@ -67,6 +77,9 @@ class CaseIntakeApiIT {
         if (postgres != null) {
             postgres.stop();
         }
+        if (issuer != null) {
+            issuer.close();
+        }
     }
 
     @BeforeEach
@@ -82,6 +95,24 @@ class CaseIntakeApiIT {
                 "{\"businessDate\":\"2026-10-09\",\"statementIngestionIds\":[" + statements + "]}");
         assertEquals(201, run.statusCode());
         runId = number(run.body(), "id");
+    }
+
+    @Test
+    void anonymousAndAnalystCannotOpenCases() throws Exception {
+        URI uri = URI.create(base + intake(runId));
+
+        HttpRequest anonymous = HttpRequest.newBuilder(uri)
+                .POST(BodyPublishers.noBody())
+                .build();
+
+        HttpRequest analyst = HttpRequest.newBuilder(uri)
+                .header("Authorization", "Bearer " + analystToken)
+                .POST(BodyPublishers.noBody())
+                .build();
+
+        assertEquals(401, http.send(anonymous, HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(403, http.send(analyst, HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM exception_case", Long.class));
     }
 
     @Test
@@ -119,7 +150,8 @@ class CaseIntakeApiIT {
 
     private static HttpResponse<String> send(String method, String path, String contentType, String body)
             throws Exception {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path));
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path))
+                .header("Authorization", "Bearer " + adminToken);
         if (contentType != null) {
             request.header("Content-Type", contentType);
         }
