@@ -229,6 +229,176 @@ class OidcSecurityHttpIT {
     }
 
     @Test
+    void jwkRedirectIsNotFollowedAndItsBodyIsNotAccepted() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger redirectHits =
+                new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger targetHits =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        RSAKey publicJwk = new RSAKey.Builder((RSAPublicKey) trustedKey.getPublic())
+                .keyID(KEY_ID)
+                .build();
+        byte[] validJwks = new JWKSet(publicJwk).toString()
+                .getBytes(StandardCharsets.UTF_8);
+
+        HttpServer redirectServer = HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+
+        try {
+            redirectServer.createContext("/redirect", exchange -> {
+                try {
+                    redirectHits.incrementAndGet();
+                    exchange.getResponseHeaders().set(
+                            "Location",
+                            "http://127.0.0.1:" + redirectServer.getAddress().getPort() + "/target");
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(302, validJwks.length);
+                    try (var output = exchange.getResponseBody()) {
+                        output.write(validJwks);
+                    }
+                } finally {
+                    exchange.close();
+                }
+            });
+
+            redirectServer.createContext("/target", exchange -> {
+                try {
+                    targetHits.incrementAndGet();
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, validJwks.length);
+                    try (var output = exchange.getResponseBody()) {
+                        output.write(validJwks);
+                    }
+                } finally {
+                    exchange.close();
+                }
+            });
+
+            redirectServer.start();
+
+            try (ConfigurableApplicationContext redirectedContext = SpringApplication.run(
+                    PaymentsApplication.class,
+                    "--server.port=0",
+                    "--spring.profiles.active=oidc",
+                    "--payments.security.allow-insecure-loopback-jwks=true",
+                    "--payments.security.issuer=" + ISSUER,
+                    "--payments.security.audience=" + AUDIENCE,
+                    "--payments.security.jwk-set-uri=http://127.0.0.1:"
+                            + redirectServer.getAddress().getPort() + "/redirect",
+                    "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                    "--spring.datasource.username=" + postgres.getUsername(),
+                    "--spring.datasource.password=" + postgres.getPassword())) {
+
+                String redirectedBase = "http://127.0.0.1:"
+                        + redirectedContext.getEnvironment().getProperty("local.server.port");
+                String bearer = token(
+                        trustedKey, ISSUER, AUDIENCE, "redirect-test-admin",
+                        List.of("ADMIN"), Instant.now().plusSeconds(600));
+
+                HttpRequest request = HttpRequest.newBuilder(
+                                URI.create(redirectedBase + "/api/v1/exceptions"))
+                        .header("Authorization", "Bearer " + bearer)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response =
+                        http.send(request, HttpResponse.BodyHandlers.ofString());
+
+                assertEquals(401, response.statusCode(), response.body());
+                assertTrue(redirectHits.get() > 0, "The configured JWK endpoint must be contacted");
+                assertEquals(0, targetHits.get(), "The redirect target must not be contacted");
+            }
+        } finally {
+            redirectServer.stop(0);
+        }
+    }
+
+    @Test
+    void aNewSigningKeyIsFetchedWhenItsKeyIdChanges() throws Exception {
+        String firstKeyId = "rotation-key-one";
+        String secondKeyId = "rotation-key-two";
+
+        RSAKey firstJwk = new RSAKey.Builder((RSAPublicKey) trustedKey.getPublic())
+                .keyID(firstKeyId)
+                .build();
+        RSAKey secondJwk = new RSAKey.Builder((RSAPublicKey) otherKey.getPublic())
+                .keyID(secondKeyId)
+                .build();
+
+        java.util.concurrent.atomic.AtomicReference<byte[]> published =
+                new java.util.concurrent.atomic.AtomicReference<>(
+                        new JWKSet(firstJwk).toString().getBytes(StandardCharsets.UTF_8));
+        java.util.concurrent.atomic.AtomicInteger fetches =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        HttpServer rotatingServer = HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+
+        try {
+            rotatingServer.createContext("/jwks", exchange -> {
+                try {
+                    fetches.incrementAndGet();
+                    byte[] body = published.get();
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (var output = exchange.getResponseBody()) {
+                        output.write(body);
+                    }
+                } finally {
+                    exchange.close();
+                }
+            });
+            rotatingServer.start();
+
+            try (ConfigurableApplicationContext rotatingContext = SpringApplication.run(
+                    PaymentsApplication.class,
+                    "--server.port=0",
+                    "--spring.profiles.active=oidc",
+                    "--payments.security.allow-insecure-loopback-jwks=true",
+                    "--payments.security.issuer=" + ISSUER,
+                    "--payments.security.audience=" + AUDIENCE,
+                    "--payments.security.jwk-set-uri=http://127.0.0.1:"
+                            + rotatingServer.getAddress().getPort() + "/jwks",
+                    "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                    "--spring.datasource.username=" + postgres.getUsername(),
+                    "--spring.datasource.password=" + postgres.getPassword())) {
+
+                String rotatingBase = "http://127.0.0.1:"
+                        + rotatingContext.getEnvironment().getProperty("local.server.port");
+
+                String firstToken = tokenWithKeyId(trustedKey, firstKeyId);
+                HttpRequest firstRequest = HttpRequest.newBuilder(
+                                URI.create(rotatingBase + "/api/v1/exceptions"))
+                        .header("Authorization", "Bearer " + firstToken)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> first =
+                        http.send(firstRequest, HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, first.statusCode(), first.body());
+
+                published.set(new JWKSet(secondJwk).toString()
+                        .getBytes(StandardCharsets.UTF_8));
+
+                String secondToken = tokenWithKeyId(otherKey, secondKeyId);
+                HttpRequest secondRequest = HttpRequest.newBuilder(
+                                URI.create(rotatingBase + "/api/v1/exceptions"))
+                        .header("Authorization", "Bearer " + secondToken)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> second =
+                        http.send(secondRequest, HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, second.statusCode(), second.body());
+                assertTrue(fetches.get() >= 2,
+                        "A token with a new key ID must trigger another JWK fetch");
+            }
+        } finally {
+            rotatingServer.stop(0);
+        }
+    }
+
+    @Test
     void validRoleCanReadButCannotPerformAdminOperation() throws Exception {
         String analyst = token(
                 trustedKey, ISSUER, AUDIENCE, "analyst-user",
@@ -851,6 +1021,27 @@ class OidcSecurityHttpIT {
                 claims);
 
         jwt.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
+        return jwt.serialize();
+    }
+
+    private static String tokenWithKeyId(KeyPair key, String keyId) throws Exception {
+        Instant now = Instant.now();
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("rotation-test-admin")
+                .claim("roles", List.of("ADMIN"))
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(600)))
+                .build();
+
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .keyID(keyId)
+                        .build(),
+                claims);
+
+        jwt.sign(new RSASSASigner((RSAPrivateKey) key.getPrivate()));
         return jwt.serialize();
     }
 

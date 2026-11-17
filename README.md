@@ -123,7 +123,8 @@ approval remains pending. See [Phase 8 security](docs/phase8-security.md).
 
 ### JWK endpoint transport
 
-The OIDC profile requires a configured HTTPS JWK URL. An explicit
-loopback-only HTTP exception is available for local tests and must not be
-enabled in production. Redirect handling remains to be verified. See
+The OIDC profile requires a configured HTTPS JWK URL and rejects JWK
+redirects. The integration suite checks discovery of a newly published
+signing key. An explicit loopback-only HTTP exception is available for local
+tests and must not be enabled in production. See
 [Phase 8 security](docs/phase8-security.md).

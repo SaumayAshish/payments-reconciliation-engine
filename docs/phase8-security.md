@@ -30,10 +30,16 @@ to permit a configured HTTP URI only for the literal IPv4 address
 `127.0.0.1`. This flag does not permit configured remote HTTP URLs and must
 not be enabled in production. URI user information and fragments are rejected.
 
-The URI policy checks the configured URL only; it does not itself inspect or
-block redirect destinations. The underlying HTTP client's redirect behavior
-and the complete key-fetch transport path still require verification before
-production use.
+The JWK HTTP client disables automatic redirects and rejects redirect
+responses, including a redirect response that contains a JWK body. The
+configured URI remains subject to the HTTPS policy above. The HTTP
+integration suite checks that a redirect target is not contacted and that
+the redirect response cannot authenticate a token.
+
+The HTTP suite also checks that a token with a newly published key ID causes
+another JWK fetch and can be authenticated. This does not establish immediate
+revocation of a removed key: deployments must account for decoder caching,
+token lifetime, and their identity provider's key-rotation procedures.
 
 ### Token-purpose limitation
 

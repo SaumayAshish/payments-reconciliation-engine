@@ -46,6 +46,7 @@ public class OidcSecurityConfig {
 
     @Bean
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @SuppressWarnings({"deprecation", "removal"})
     JwtDecoder jwtDecoder(
             @Value("${payments.security.issuer}") String issuer,
             @Value("${payments.security.audience}") String audience,
@@ -58,11 +59,43 @@ public class OidcSecurityConfig {
 
         NimbusJwtDecoder decoder = NimbusJwtDecoder
                 .withJwkSetUri(validatedJwkSetUri)
+                .restOperations(jwkRestTemplate())
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
                 .build();
 
         decoder.setJwtValidator(new TrustedJwtValidator(issuer, audience));
         return decoder;
+    }
+
+    /**
+     * The decoder builder currently accepts RestOperations. Reject redirects
+     * at both the connection and response levels so a 3xx body is not used
+     * as a JWK set.
+     */
+    @SuppressWarnings({"deprecation", "removal"})
+    private static org.springframework.web.client.RestTemplate jwkRestTemplate() {
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory() {
+            @Override
+            protected void prepareConnection(
+                    java.net.HttpURLConnection connection, String method) throws java.io.IOException {
+                super.prepareConnection(connection, method);
+                connection.setInstanceFollowRedirects(false);
+            }
+        };
+
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(5000);
+
+        var rest = new org.springframework.web.client.RestTemplate(factory);
+        rest.getInterceptors().add((request, body, execution) -> {
+            var response = execution.execute(request, body);
+            if (response.getStatusCode().is3xxRedirection()) {
+                response.close();
+                throw new java.io.IOException("JWK endpoint redirects are not permitted");
+            }
+            return response;
+        });
+        return rest;
     }
 
     @Bean
