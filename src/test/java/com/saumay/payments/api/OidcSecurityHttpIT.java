@@ -105,6 +105,7 @@ class OidcSecurityHttpIT {
                 "--spring.datasource.url=" + postgres.getJdbcUrl(),
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword(),
+                "--payments.security.allow-insecure-loopback-jwks=true",
                 "--payments.security.issuer=" + ISSUER,
                 "--payments.security.audience=" + AUDIENCE,
                 "--payments.security.jwk-set-uri=" + jwkSetUri);

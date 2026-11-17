@@ -21,8 +21,19 @@ JSON `roles` array with exactly one recognized application role: `ADMIN`,
 `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, or `AUDITOR`.
 
 No production identity-provider credentials or signing keys belong in this
-repository. Configure a trusted issuer, audience, and JWK endpoint for the
-deployment.
+repository. Configure a trusted issuer, audience, and HTTPS JWK endpoint for
+the deployment.
+
+The application validates the configured JWK URI at startup and requires
+HTTPS. Local tests may set `payments.security.allow-insecure-loopback-jwks=true`
+to permit a configured HTTP URI only for the literal IPv4 address
+`127.0.0.1`. This flag does not permit configured remote HTTP URLs and must
+not be enabled in production. URI user information and fragments are rejected.
+
+The URI policy checks the configured URL only; it does not itself inspect or
+block redirect destinations. The underlying HTTP client's redirect behavior
+and the complete key-fetch transport path still require verification before
+production use.
 
 ### Token-purpose limitation
 

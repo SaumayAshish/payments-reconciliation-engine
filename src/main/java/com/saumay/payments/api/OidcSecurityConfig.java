@@ -49,10 +49,15 @@ public class OidcSecurityConfig {
     JwtDecoder jwtDecoder(
             @Value("${payments.security.issuer}") String issuer,
             @Value("${payments.security.audience}") String audience,
-            @Value("${payments.security.jwk-set-uri}") String jwkSetUri) {
+            @Value("${payments.security.jwk-set-uri}") String jwkSetUri,
+            @Value("${payments.security.allow-insecure-loopback-jwks:false}")
+                    boolean allowInsecureLoopbackJwks) {
+
+        String validatedJwkSetUri =
+                JwkSetUriPolicy.validate(jwkSetUri, allowInsecureLoopbackJwks);
 
         NimbusJwtDecoder decoder = NimbusJwtDecoder
-                .withJwkSetUri(jwkSetUri)
+                .withJwkSetUri(validatedJwkSetUri)
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
                 .build();
 

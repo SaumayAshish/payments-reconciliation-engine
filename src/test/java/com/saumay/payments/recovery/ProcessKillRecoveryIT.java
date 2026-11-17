@@ -208,6 +208,7 @@ class ProcessKillRecoveryIT {
                 quote(classpath),
                 "com.saumay.payments.PaymentsApplication",
                 quote("--spring.profiles.active=oidc"),
+                quote("--payments.security.allow-insecure-loopback-jwks=true"),
                 quote("--payments.security.issuer=" + ISSUER),
                 quote("--payments.security.audience=" + AUDIENCE),
                 quote("--payments.security.jwk-set-uri=http://127.0.0.1:"

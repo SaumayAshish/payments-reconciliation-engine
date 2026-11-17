@@ -55,6 +55,7 @@ class IngestionApiIT {
         context = SpringApplication.run(PaymentsApplication.class,
                 "--server.port=0",
                 "--spring.profiles.active=oidc",
+                "--payments.security.allow-insecure-loopback-jwks=true",
                 "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
                 "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
                 "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),

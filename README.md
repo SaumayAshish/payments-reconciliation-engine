@@ -120,3 +120,10 @@ for configuration, test coverage, and remaining limitations.
 A pending approval decision refused because identity provenance cannot be
 safely compared records an `APPROVAL_IDENTITY_MISMATCH` audit event. The
 approval remains pending. See [Phase 8 security](docs/phase8-security.md).
+
+### JWK endpoint transport
+
+The OIDC profile requires a configured HTTPS JWK URL. An explicit
+loopback-only HTTP exception is available for local tests and must not be
+enabled in production. Redirect handling remains to be verified. See
+[Phase 8 security](docs/phase8-security.md).

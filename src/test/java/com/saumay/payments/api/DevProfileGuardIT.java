@@ -83,6 +83,7 @@ class DevProfileGuardIT {
                         "--server.port=0",
                         "--spring.profiles.active=dev,oidc",
                         "--payments.security.allow-insecure-dev=true",
+                        "--payments.security.allow-insecure-loopback-jwks=true",
                         "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
                         "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
                         "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
@@ -134,6 +135,80 @@ class DevProfileGuardIT {
             assertEquals(200, readResponse.statusCode(), readResponse.body());
             assertEquals(403, spoofedResponse.statusCode(), spoofedResponse.body());
         }
+    }
+
+    @Test
+    void oidcRejectsPlainHttpJwksWithoutExplicitOptIn() throws Exception {
+        try (TestOidcIssuer issuer = new TestOidcIssuer()) {
+            Exception failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    Exception.class,
+                    () -> {
+                        try (ConfigurableApplicationContext rejected = SpringApplication.run(
+                                PaymentsApplication.class,
+                                "--server.port=0",
+                                "--spring.profiles.active=oidc",
+                                "--payments.security.allow-insecure-loopback-jwks=false",
+                                "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
+                                "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                                "--spring.datasource.username=" + postgres.getUsername(),
+                                "--spring.datasource.password=" + postgres.getPassword())) {
+                            rejected.getId();
+                        }
+                    });
+
+            boolean foundPolicyError = false;
+            Throwable current = failure;
+
+            while (current != null) {
+                if (current.getMessage() != null
+                        && current.getMessage().contains("JWK set URI must use HTTPS")) {
+                    foundPolicyError = true;
+                    break;
+                }
+                current = current.getCause();
+            }
+
+            assertTrue(foundPolicyError,
+                    "Startup must fail because the HTTP JWK endpoint was not explicitly allowed: " + failure);
+        }
+    }
+
+    @Test
+    void remoteHttpJwksIsRejectedEvenWithLoopbackOptIn() {
+        Exception failure = org.junit.jupiter.api.Assertions.assertThrows(
+                Exception.class,
+                () -> {
+                    try (ConfigurableApplicationContext rejected = SpringApplication.run(
+                            PaymentsApplication.class,
+                            "--server.port=0",
+                            "--spring.profiles.active=oidc",
+                            "--payments.security.allow-insecure-loopback-jwks=true",
+                            "--payments.security.issuer=https://identity.example.test",
+                            "--payments.security.audience=payments-api",
+                            "--payments.security.jwk-set-uri=http://192.0.2.1/jwks",
+                            "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                            "--spring.datasource.username=" + postgres.getUsername(),
+                            "--spring.datasource.password=" + postgres.getPassword())) {
+                        rejected.getId();
+                    }
+                });
+
+        boolean foundPolicyError = false;
+        Throwable current = failure;
+
+        while (current != null) {
+            if (current.getMessage() != null
+                    && current.getMessage().contains("JWK set URI must use HTTPS")) {
+                foundPolicyError = true;
+                break;
+            }
+            current = current.getCause();
+        }
+
+        assertTrue(foundPolicyError,
+                "Startup must reject a remote HTTP JWK endpoint: " + failure);
     }
 
     private static void assertDenied(String path) throws Exception {
