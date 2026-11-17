@@ -24,6 +24,16 @@ No production identity-provider credentials or signing keys belong in this
 repository. Configure a trusted issuer, audience, and JWK endpoint for the
 deployment.
 
+### Token-purpose limitation
+
+The current validator does not independently require a token type, scope, or
+authorized-party claim that distinguishes an access token from an ID token.
+A token that satisfies the configured signature, issuer, audience, time,
+subject, and role checks can be accepted regardless of its intended purpose.
+The deployment must verify that its identity-provider and audience contract
+prevents tokens issued for another purpose from satisfying these checks.
+Token-purpose enforcement remains part of the Phase 8 security review.
+
 When `oidc` is not active, the application denies HTTP access by default,
 including Actuator. Selecting `dev` or supplying the former
 `payments.security.allow-insecure-dev` property does not re-enable the
@@ -92,8 +102,8 @@ policy.
 
 The test suite includes:
 
-- Signed-token validation, invalid signature, issuer, audience and expiry
-  scenarios.
+- Signed-token validation, invalid signature, issuer, audience, expiry,
+  missing required claims, and future `nbf` scenarios.
 - An OIDC HTTP role matrix and representative unknown route and method
   checks.
 - Actor-header spoofing and maker-checker HTTP scenarios.
@@ -103,6 +113,8 @@ The test suite includes:
   controlled-resolution, and process-recovery workflows.
 - Default-deny tests, including the `dev` profile with the former opt-in
   flag set.
+- A combined `dev,oidc` profile test checking authentication, role denial,
+  and resistance to a spoofed actor header.
 
 `TestOidcIssuer` and the local JWK servers are test fixtures using ephemeral
 keys; they are not production identity providers.

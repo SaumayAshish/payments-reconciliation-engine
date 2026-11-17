@@ -172,6 +172,62 @@ class OidcSecurityHttpIT {
     }
 
     @Test
+    void invalidRequiredClaimsCannotWriteIngestionData() throws Exception {
+        Instant now = Instant.now();
+
+        JWTClaimsSet futureNotBefore = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("claim-test-admin")
+                .claim("roles", List.of("ADMIN"))
+                .notBeforeTime(Date.from(now.plusSeconds(600)))
+                .expirationTime(Date.from(now.plusSeconds(1200)))
+                .build();
+
+        JWTClaimsSet missingExpiry = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("claim-test-admin")
+                .claim("roles", List.of("ADMIN"))
+                .build();
+
+        JWTClaimsSet missingSubject = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .claim("roles", List.of("ADMIN"))
+                .expirationTime(Date.from(now.plusSeconds(1200)))
+                .build();
+
+        JWTClaimsSet missingAudience = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .subject("claim-test-admin")
+                .claim("roles", List.of("ADMIN"))
+                .expirationTime(Date.from(now.plusSeconds(1200)))
+                .build();
+
+        List<JWTClaimsSet> invalidClaims = List.of(
+                futureNotBefore, missingExpiry, missingSubject, missingAudience);
+
+        Integer before = jdbc.queryForObject(
+                "SELECT count(*) FROM ingestion_file", Integer.class);
+
+        String statement = String.join("\n",
+                CSV_HEADER,
+                "ACC-CLAIM,,2026-10-09,10.00,GBP,CLAIM-TEST,Example,payment");
+
+        for (JWTClaimsSet claims : invalidClaims) {
+            HttpResponse<String> response = request(
+                    "POST", "/api/v1/ingestions/statements",
+                    signClaims(claims), null, "text/csv", statement);
+
+            assertEquals(401, response.statusCode(), response.body());
+        }
+
+        assertEquals(before, jdbc.queryForObject(
+                "SELECT count(*) FROM ingestion_file", Integer.class));
+    }
+
+    @Test
     void validRoleCanReadButCannotPerformAdminOperation() throws Exception {
         String analyst = token(
                 trustedKey, ISSUER, AUDIENCE, "analyst-user",
@@ -784,6 +840,17 @@ class OidcSecurityHttpIT {
                 : BodyPublishers.ofString(body));
 
         return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static String signClaims(JWTClaimsSet claims) throws Exception {
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .keyID(KEY_ID)
+                        .build(),
+                claims);
+
+        jwt.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
+        return jwt.serialize();
     }
 
     private static String token(

@@ -75,6 +75,67 @@ class DevProfileGuardIT {
         assertTrue(response.body().contains("AUTHENTICATION_REQUIRED"), response.body());
     }
 
+    @Test
+    void oidcStillAuthenticatesWhenDevAndFormerOptInAreAlsoSet() throws Exception {
+        try (TestOidcIssuer issuer = new TestOidcIssuer();
+                ConfigurableApplicationContext oidcContext = SpringApplication.run(
+                        PaymentsApplication.class,
+                        "--server.port=0",
+                        "--spring.profiles.active=dev,oidc",
+                        "--payments.security.allow-insecure-dev=true",
+                        "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                        "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                        "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
+                        "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                        "--spring.datasource.username=" + postgres.getUsername(),
+                        "--spring.datasource.password=" + postgres.getPassword())) {
+
+            String oidcBase = "http://127.0.0.1:"
+                    + oidcContext.getEnvironment().getProperty("local.server.port");
+            String analystToken = issuer.token("combined-profile-analyst", "ANALYST");
+
+            HttpRequest anonymous = HttpRequest.newBuilder(
+                            URI.create(oidcBase + "/api/v1/exceptions"))
+                    .GET()
+                    .build();
+
+            HttpRequest invalidToken = HttpRequest.newBuilder(
+                            URI.create(oidcBase + "/api/v1/exceptions"))
+                    .header("Authorization", "Bearer invalid-token")
+                    .GET()
+                    .build();
+
+            HttpRequest analystRead = HttpRequest.newBuilder(
+                            URI.create(oidcBase + "/api/v1/exceptions"))
+                    .header("Authorization", "Bearer " + analystToken)
+                    .GET()
+                    .build();
+
+            HttpRequest spoofedAdmin = HttpRequest.newBuilder(
+                            URI.create(oidcBase + "/api/v1/ingestions/statements"))
+                    .header("Authorization", "Bearer " + analystToken)
+                    .header("X-Actor", "root")
+                    .header("Content-Type", "text/csv")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            "account,booking_date,value_date,amount,currency,reference,counterparty,narrative"))
+                    .build();
+
+            HttpResponse<String> anonymousResponse =
+                    http.send(anonymous, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> invalidResponse =
+                    http.send(invalidToken, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> readResponse =
+                    http.send(analystRead, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> spoofedResponse =
+                    http.send(spoofedAdmin, HttpResponse.BodyHandlers.ofString());
+
+            assertEquals(401, anonymousResponse.statusCode(), anonymousResponse.body());
+            assertEquals(401, invalidResponse.statusCode(), invalidResponse.body());
+            assertEquals(200, readResponse.statusCode(), readResponse.body());
+            assertEquals(403, spoofedResponse.statusCode(), spoofedResponse.body());
+        }
+    }
+
     private static void assertDenied(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
                 .GET()
