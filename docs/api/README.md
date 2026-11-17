@@ -1,26 +1,25 @@
 # API
 
-Status: **Endpoint catalogue, updated as endpoints ship.** The OpenAPI file is
-the authoritative contract. Phase 5 approval, audit and configuration
-endpoints enforce their declared roles through ActorContext. Older endpoints,
-including the Phase 6 ageing report, retain pre-Phase-8 identity behavior; the
-roles shown for them are intended roles.
+The [OpenAPI file](openapi.yaml) describes the HTTP contract. The
+experimental OIDC profile requires a validated bearer JWT and enforces the
+route roles. Without OIDC, HTTP access is denied by default. Planned routes
+in the catalogue are identified as such and are not promises that an
+endpoint is implemented.
 
 ## Conventions
 
-- Base path `/api/v1`. DTOs only; entities are never exposed.
-- JSON, UTF-8. Money in responses as `{ "amountMinor": 125050, "currency": "GBP" }`. Display formatting is a client concern.
-- Every request carries or is assigned a `X-Correlation-Id`, echoed in the response and in logs.
-- Errors use one shape:
-  ```json
-  { "code": "ILLEGAL_STATE_TRANSITION", "message": "Cannot move case from RESOLVED to OPEN",
-    "correlationId": "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦", "timestamp": "2026-10-07T15:04:05.123456Z",
-    "details": [ { "field": "state", "issue": "terminal state" } ] }
-  ```
-  No stack traces, SQL, hostnames or secrets, ever.
-- Roles: `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR`. Enforced server-side from Phase 8; an interim `ActorContext` supplies identity before then (Q-13).
-- Optimistic concurrency on cases: every write names the `expectedVersion` it last read; a stale version returns `409 CASE_VERSION_CONFLICT` and changes nothing. Until Phase 8 writes also carry an `X-Actor` header (`400 ACTOR_REQUIRED` when missing).
-
+- Base path: `/api/v1`.
+- JSON uses UTF-8. Money is represented in integer minor units and a currency code.
+- Requests use `Authorization: Bearer <access-token>`. The token supplies the
+  authenticated actor; `X-Actor` does not establish or override identity.
+- Roles are `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, and `AUDITOR`.
+- Missing or invalid authentication returns 401; insufficient role returns 403.
+- A valid caller correlation ID is echoed. A missing or unsafe value is replaced
+  with a generated ID.
+- Case writes use `expectedVersion` where required. A stale version returns
+  `409 CASE_VERSION_CONFLICT`.
+- Errors use the common API error shape, including `code`, `message`,
+  `correlationId`, `timestamp`, and `details`.
 ## Catalogue
 
 | Method and path | Purpose | Roles | Idempotency | FRD | Phase |
@@ -33,7 +32,7 @@ roles shown for them are intended roles.
 | `GET /reconciliations/runs/{id}` | Run status, counts, output hash | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 10 | 3 |
 | `GET /reconciliations/runs/{id}/results` | Paged matches and exceptions | `ADMIN`, `ANALYST`, `AUDITOR` | Safe | 04, 05 | 3 |
 | `POST /reconciliations/runs/{id}/replay` | Recompute and compare output hash | `ADMIN`, `AUDITOR` | Safe (read-only) | 10 | 3 |
-| `POST /reconciliations/runs/{id}/exceptions` | Open a case for every exception of a completed run | `ADMIN`, `TEAM_LEAD` | Safe to repeat: one case per natural key, repeat creates none | 06 | 4 (done; Phase 7 replaces it with an event consumer) |
+| `POST /reconciliations/runs/{id}/exceptions` | Open a case for every exception of a completed run | `ADMIN`, `TEAM_LEAD` | Safe to repeat: one case per natural key, repeat creates none | 06 | 4 (implemented; event consumer also available) |
 | `POST /reconciliations/runs/{runId}/matches/{ordinal}/unmatch` | Reverse an auto-confirmed run match, open a review case | `ADMIN`, `TEAM_LEAD` | `409 NOTHING_TO_UNMATCH` when already reversed | 12 | 4 (done) |
 | `GET /exceptions` | Queue; filter by status, team, priority, kind, owner; keyset paging (`after`, `limit` up to 500) | `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR` | Safe | 06 | 4 (done) |
 | `GET /exceptions/{id}` | Case detail: timeline, comments, assignments, claim rows, one consistent snapshot (candidate matches deferred) | `ADMIN`, `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR` | Safe | 06 | 4 (done) |
@@ -43,17 +42,17 @@ roles shown for them are intended roles.
 | `POST /exceptions/{id}/escalate` | `INVESTIGATING` to `ESCALATED`, reason mandatory | `ADMIN`, `TEAM_LEAD` | Version-guarded | 07 | 4 (done) |
 | `POST /exceptions/{id}/match` | Resolve by manual match (1:1) or split (1:n or n:1, up to 8 a side, sums equal) | `ADMIN`, `ANALYST`, `TEAM_LEAD` | Version-guarded; claimed line returns `409` | 12 | 4 (done) |
 | `POST /exceptions/{id}/unmatch` | Reverse a manual match or split, open a linked review case | `ADMIN`, `TEAM_LEAD` | A second unmatch returns `409 NOTHING_TO_UNMATCH` | 12 | 4 (done) |
-| `POST /exceptions/{id}/resolve` | Write-off or adjustment resolution; submits an approval | `ANALYST` | State-guarded | 07, 08 | 5 |
+| `POST /exceptions/{id}/resolve` | Write-off or adjustment resolution; may submit an approval | `ANALYST`, `TEAM_LEAD`, `CONTROLLER` | State-guarded | 07, 08 | 5 |
 | `POST /approvals/{id}/approve` | Approve (checker must differ from maker) | `CONTROLLER` | Decided once | 08 | 5 |
 | `POST /approvals/{id}/reject` | Reject with reason | `CONTROLLER` | Decided once | 08 | 5 |
 | `GET /approvals/{id}` | Read one approval request | `ANALYST`, `TEAM_LEAD`, `CONTROLLER`, `AUDITOR`, `ADMIN` | Safe | 08 | 5 (implemented) |
 | `GET /audit/{entityType}/{entityId}` | Entity history | `AUDITOR`, `ADMIN` | Safe | 09 | 5 |
 | `GET /audit/verify` | Verify the chain, return `OK` or first bad `seq` | `AUDITOR`, `ADMIN` | Safe | 09 | 5 |
-| `GET /reports/match/{runId}` | Completed-run match counts by tier and band | `TEAM_LEAD`, `AUDITOR`, `ADMIN` intended; not yet enforced | Safe | 11 | 6 (targeted tests passed) |
-| `GET /reports/ageing` | Current unresolved snapshot grouped by team and exception kind; `asOf` controls age and SLA calculations | `TEAM_LEAD`, `AUDITOR`, `ADMIN` intended; not yet enforced | Safe | 11 | 6 (targeted tests passed; phase in progress) |
-| `GET /reports/resolution-time` | Current resolved-case elapsed-time statistics by team and exception kind | `TEAM_LEAD`, `AUDITOR`, `ADMIN` intended; not yet enforced | Safe | 11 | 6 (targeted tests passed) |
-| `GET /reports/sla` | SLA status | `TEAM_LEAD`, `AUDITOR`, `ADMIN` | Safe | 11 | 6 |
-| `GET /reports/workload` | Current unresolved counts by team and status | `TEAM_LEAD`, `ADMIN` intended; not yet enforced | Safe | 11 | 6 (targeted tests passed) |
+| `GET /reports/match/{runId}` | Completed-run match counts by tier and band | `TEAM_LEAD`, `AUDITOR`, `ADMIN` | Safe | 11 | 6 (targeted tests passed) |
+| `GET /reports/ageing` | Current unresolved snapshot grouped by team and exception kind; `asOf` controls age and SLA calculations | `TEAM_LEAD`, `AUDITOR`, `ADMIN` | Safe | 11 | 6 (targeted tests passed; phase in progress) |
+| `GET /reports/resolution-time` | Current resolved-case elapsed-time statistics by team and exception kind | `TEAM_LEAD`, `AUDITOR`, `ADMIN` | Safe | 11 | 6 (targeted tests passed) |
+| `GET /reports/sla` | SLA status | Planned | Safe | 11 | Later; not implemented |
+| `GET /reports/workload` | Current unresolved counts by team and status | `TEAM_LEAD`, `ADMIN` | Safe | 11 | 6 (targeted tests passed) |
 | `PUT /configuration` | Append a complete approval-threshold configuration | `ADMIN` | New version each change, audited | 08, 09 | 5 (implemented) |
 
 ## Notes

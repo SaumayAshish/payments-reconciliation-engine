@@ -84,6 +84,12 @@ differ.
 
 ## Verification
 
+The OpenAPI document declares the bearer JWT scheme. Its optional `X-Actor`
+parameters are retained for compatibility with existing request shapes, but
+the header is ignored for authentication and actor identity. Contract tests
+also check documented roles for selected sensitive routes against the current
+policy.
+
 The test suite includes:
 
 - Signed-token validation, invalid signature, issuer, audience and expiry

@@ -72,6 +72,85 @@ class OpenApiSpecTest {
     }
 
     @Test
+    void bearerAuthenticationIsDeclaredAndActorHeadersAreOptional() throws IOException {
+        Map<String, Object> spec = load();
+        Map<String, Object> components = map(spec.get("components"));
+        Map<String, Object> schemes = map(components.get("securitySchemes"));
+        Map<String, Object> bearer = map(schemes.get("bearerAuth"));
+
+        assertEquals("http", bearer.get("type"));
+        assertEquals("bearer", bearer.get("scheme"));
+        assertEquals("JWT", bearer.get("bearerFormat"));
+
+        Object security = spec.get("security");
+        assertTrue(security instanceof List<?>, "global security must be a list");
+        assertTrue(((List<?>) security).stream()
+                .anyMatch(item -> item instanceof Map<?, ?> requirement
+                        && requirement.containsKey("bearerAuth")),
+                "global security must require bearerAuth");
+
+        Map<String, Object> actor = map(map(components.get("parameters")).get("Actor"));
+        assertEquals("X-Actor", actor.get("name"));
+        assertEquals(Boolean.FALSE, actor.get("required"));
+
+        for (Map.Entry<String, Object> path : map(spec.get("paths")).entrySet()) {
+            for (Map.Entry<String, Object> operation : map(path.getValue()).entrySet()) {
+                if (!METHODS.contains(operation.getKey())) {
+                    continue;
+                }
+
+                Map<String, Object> details = map(operation.getValue());
+                String where = operation.getKey().toUpperCase() + " " + path.getKey();
+
+                assertTrue(!details.containsKey("security"),
+                        where + " must not override the global bearer requirement");
+
+                if (details.get("parameters") instanceof List<?> parameters) {
+                    for (Object item : parameters) {
+                        Map<String, Object> parameter = map(item);
+
+                        if ("X-Actor".equals(parameter.get("name"))) {
+                            assertEquals(Boolean.FALSE, parameter.get("required"),
+                                    where + " must not require X-Actor");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void sensitiveRouteRolesMatchTheCurrentSecurityPolicy() throws IOException {
+        Map<String, Object> paths = map(load().get("paths"));
+
+        assertRoles(paths, "/api/v1/reconciliations/runs/{id}", "get",
+                Set.of("ADMIN", "ANALYST", "AUDITOR"));
+        assertRoles(paths, "/api/v1/reconciliations/runs/{id}/results", "get",
+                Set.of("ADMIN", "ANALYST", "AUDITOR"));
+        assertRoles(paths, "/api/v1/exceptions/{id}/resolve", "post",
+                Set.of("ANALYST", "TEAM_LEAD", "CONTROLLER"));
+        assertRoles(paths, "/api/v1/approvals/{id}/approve", "post",
+                Set.of("CONTROLLER"));
+        assertRoles(paths, "/api/v1/approvals/{id}/reject", "post",
+                Set.of("CONTROLLER"));
+        assertRoles(paths, "/api/v1/configuration", "put",
+                Set.of("ADMIN"));
+        assertRoles(paths, "/api/v1/audit/verify", "get",
+                Set.of("ADMIN", "AUDITOR"));
+        assertRoles(paths, "/api/v1/reports/workload", "get",
+                Set.of("ADMIN", "TEAM_LEAD"));
+    }
+
+    private static void assertRoles(
+            Map<String, Object> paths, String path, String method, Set<String> expected) {
+        Map<String, Object> operation = map(map(paths.get(path)).get(method));
+        Object value = operation.get("x-required-roles");
+
+        assertTrue(value instanceof List<?>, method + " " + path + " must list roles");
+        assertEquals(expected, Set.copyOf((List<?>) value), method + " " + path);
+    }
+
+    @Test
     void schemaPropertiesUseOnlyOpenApiKeywords() throws IOException {
         Map<String, Object> schemas = map(map(load().get("components")).get("schemas"));
 

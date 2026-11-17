@@ -4,9 +4,12 @@ info:
   version: 0.4.0
   description: >
     Ingestion, reconciliation, exception management, approval and audit endpoints.
-    Phase 5 approval, configuration and audit endpoints use ActorContext and enforce
-    their declared roles. Older endpoints retain their earlier identity behavior;
-    full authentication and authorization are planned for Phase 8. All data is synthetic.
+    The experimental OIDC profile authenticates bearer JWTs and enforces route
+    roles. Without OIDC, HTTP access is denied by default. The authenticated
+    token supplies the actor identity; X-Actor does not establish identity.
+    All data is synthetic.
+security:
+  - bearerAuth: []
 servers:
   - url: http://localhost:8080
 paths:
@@ -17,12 +20,13 @@ paths:
         Walks the stored chain and returns OK with its verified head, or FAILED
         with the first bad sequence and reason. This does not detect deletion
         of the tail without comparison to an independently recorded head.
-        Phase 5 enforces the listed roles through the actor context.
+        The OIDC security chain enforces the listed roles.
       x-required-roles: [AUDITOR, ADMIN]
       parameters:
         - name: X-Actor
           in: header
-          required: true
+          required: false
+          description: Ignored for authentication and actor identity.
           schema: { type: string }
         - name: expectedSeq
           in: query
@@ -51,12 +55,12 @@ paths:
       description: >
         Returns events in ascending sequence order. To continue, pass the last
         returned sequence as afterSeq. An unknown entity returns an empty list.
-        Phase 5 enforces the listed roles through the actor context.
+        The OIDC security chain enforces the listed roles.
       x-required-roles: [AUDITOR, ADMIN]
       parameters:
         - { name: entityType, in: path, required: true, schema: { type: string } }
         - { name: entityId, in: path, required: true, schema: { type: string } }
-        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: false, description: Ignored for actor identity, schema: { type: string } }
         - { name: afterSeq, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
@@ -82,7 +86,7 @@ paths:
         Only an ADMIN may update configuration.
       x-required-roles: [ADMIN]
       parameters:
-        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: false, description: Ignored for actor identity, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -109,7 +113,7 @@ paths:
       x-required-roles: [ANALYST, TEAM_LEAD, CONTROLLER]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: false, description: Ignored for actor identity, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -135,7 +139,7 @@ paths:
       x-required-roles: [ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR, ADMIN]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: false, description: Ignored for actor identity, schema: { type: string } }
       responses:
         '200': { description: Approval request }
         '400': { $ref: '#/components/responses/Error' }
@@ -149,7 +153,7 @@ paths:
       x-required-roles: [CONTROLLER]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: false, description: Ignored for actor identity, schema: { type: string } }
       requestBody:
         required: false
         content:
@@ -172,7 +176,7 @@ paths:
       x-required-roles: [CONTROLLER]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-        - { name: X-Actor, in: header, required: true, schema: { type: string } }
+        - { name: X-Actor, in: header, required: false, description: Ignored for actor identity, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -329,7 +333,7 @@ paths:
     get:
       summary: Read a run
       description: The run's definition, status, summary and output hash. Error code RUN_NOT_FOUND (404).
-      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
+      x-required-roles: [ADMIN, ANALYST, AUDITOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -346,7 +350,7 @@ paths:
         One view at a time, in ordinal order, paged by cursor: pass the previous page's nextAfter as after. A page
         counts matches or exceptions, never lines. nextAfter is null on the last page. Error codes: RUN_NOT_FOUND
         (404); RUN_NOT_COMPLETED (409); INVALID_RESULT_VIEW and INVALID_PAGE_PARAMETER (400).
-      x-required-roles: [ADMIN, ANALYST, TEAM_LEAD, CONTROLLER, AUDITOR]
+      x-required-roles: [ADMIN, ANALYST, AUDITOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
         - name: view
@@ -623,17 +627,23 @@ paths:
         '404': { $ref: '#/components/responses/CaseError' }
         '409': { $ref: '#/components/responses/CaseError' }
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token validated by the configured OIDC resource server.
   parameters:
     Actor:
       name: X-Actor
       in: header
-      required: true
-      description: The acting user. Until authentication arrives in Phase 8 the caller names itself here.
-      schema: { type: string, minLength: 1 }
+      required: false
+      description: Ignored for authentication and actor identity.
+      schema: { type: string }
   responses:
     CaseError:
       description: >
-        Case error in the standard error shape. 400 ACTOR_REQUIRED, REQUEST_INVALID, INVALID_FILTER,
+        Case error in the standard error shape. 400 REQUEST_INVALID, INVALID_FILTER,
         INVALID_PAGE_PARAMETER, CASE_REQUEST_INVALID. 404 CASE_NOT_FOUND. 409 CASE_VERSION_CONFLICT,
         ILLEGAL_STATE_TRANSITION, CASE_OWNER_REQUIRED, MATCH_LINE_ALREADY_CLAIMED, NOTHING_TO_UNMATCH. 422
         MATCH_INVALID, MATCH_LINE_NOT_FOUND. A 409 means the world changed under the caller, so read the case again
