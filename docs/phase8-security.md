@@ -187,7 +187,7 @@ The configuration must contain at least one nonblank ID. Matching is exact
 and case-sensitive. Tokens for other clients are rejected. Configure actual
 IDs from the chosen identity provider; `integration-client` is only a
 synthetic test fixture.
-
+An OIDC startup test verifies that an empty client allowlist prevents startup.
 Client authorization does not prove that two subjects are different people.
 The selected identity provider must still be assessed for stable person
 identities and compatible access-token issuance.

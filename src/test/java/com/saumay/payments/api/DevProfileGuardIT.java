@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.saumay.payments.PaymentsApplication;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -78,19 +80,19 @@ class DevProfileGuardIT {
     @Test
     void oidcStillAuthenticatesWhenDevAndFormerOptInAreAlsoSet() throws Exception {
         try (TestOidcIssuer issuer = new TestOidcIssuer();
-                ConfigurableApplicationContext oidcContext = SpringApplication.run(
-                        PaymentsApplication.class,
-                        "--server.port=0",
-                        "--spring.profiles.active=dev,oidc",
-                        "--payments.security.allow-insecure-dev=true",
-                        "--payments.security.allow-insecure-loopback-jwks=true",
-                        "--payments.security.allowed-client-ids=integration-client",
-                        "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
-                        "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
-                        "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
-                        "--spring.datasource.url=" + postgres.getJdbcUrl(),
-                        "--spring.datasource.username=" + postgres.getUsername(),
-                        "--spring.datasource.password=" + postgres.getPassword())) {
+             ConfigurableApplicationContext oidcContext = SpringApplication.run(
+                     PaymentsApplication.class,
+                     "--server.port=0",
+                     "--spring.profiles.active=dev,oidc",
+                     "--payments.security.allow-insecure-dev=true",
+                     "--payments.security.allow-insecure-loopback-jwks=true",
+                     "--payments.security.allowed-client-ids=integration-client",
+                     "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                     "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                     "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
+                     "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                     "--spring.datasource.username=" + postgres.getUsername(),
+                     "--spring.datasource.password=" + postgres.getPassword())) {
 
             String oidcBase = "http://127.0.0.1:"
                     + oidcContext.getEnvironment().getProperty("local.server.port");
@@ -250,6 +252,49 @@ class DevProfileGuardIT {
 
             assertTrue(foundPolicyError,
                     "Startup must reject an HTTP issuer: " + failure);
+        }
+    }
+
+    @Test
+    void oidcRejectsAnEmptyClientAllowlistAtStartup() throws Exception {
+        try (TestOidcIssuer issuer = new TestOidcIssuer()) {
+            Exception failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    Exception.class,
+                    () -> {
+                        try (ConfigurableApplicationContext rejected =
+                                     SpringApplication.run(
+                                             PaymentsApplication.class,
+                                             "--server.port=0",
+                                             "--spring.profiles.active=oidc",
+                                             "--payments.security.allow-insecure-loopback-jwks=true",
+                                             "--payments.security.allowed-client-ids=",
+                                             "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
+                                             "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                                             "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
+                                             "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                                             "--spring.datasource.username=" + postgres.getUsername(),
+                                             "--spring.datasource.password=" + postgres.getPassword())) {
+                            rejected.getId();
+                        }
+                    });
+
+            boolean foundAllowlistError = false;
+            Throwable current = failure;
+
+            while (current != null) {
+                if (current.getMessage() != null
+                        && current.getMessage().contains(
+                        "payments.security.allowed-client-ids must contain")) {
+                    foundAllowlistError = true;
+                    break;
+                }
+
+                current = current.getCause();
+            }
+
+            assertTrue(
+                    foundAllowlistError,
+                    "Startup must reject an empty client allowlist: " + failure);
         }
     }
 
