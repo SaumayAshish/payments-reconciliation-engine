@@ -192,5 +192,23 @@ Client authorization does not prove that two subjects are different people.
 The selected identity provider must still be assessed for stable person
 identities and compatible access-token issuance.
 
+### Auth0 role-claim configuration
+
+Auth0 is the selected production identity-provider target, but the tenant
+and its configuration have not yet been verified.
+
+The API reads the claim named by `payments.security.roles-claim`. The
+default is `roles`, preserving the local Keycloak test configuration. For
+Auth0, configure a namespaced claim and set this property to the exact same
+name. The API does not fall back to another claim.
+
+The configured claim must contain an array with exactly one recognized
+application role. Missing, malformed, multiple, or unknown roles are
+rejected.
+
+The Auth0 API must use the RFC 9068 access-token profile. Actual issuer,
+audience, authorized client IDs, role issuance, signing-key rotation, and
+the stable-person identity contract must be verified against the configured
+tenant before the production gate can pass.
 
 Local Keycloak interoperability smoke-test results and their limits are recorded in [Phase 8 Keycloak evidence](phase8-keycloak-evidence.md).

@@ -1,6 +1,7 @@
 package com.saumay.payments.api;
 
 import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
@@ -20,7 +21,7 @@ import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * Experimental OIDC resource-server wiring.
- *
+ * <p>
  * The profile must not be treated as production-ready until the complete
  * HTTP authorization and identity-migration tests pass.
  */
@@ -29,8 +30,9 @@ import org.springframework.security.web.SecurityFilterChain;
 public class OidcSecurityConfig {
 
     @Bean
-    VerifiedJwtActorMapper verifiedJwtActorMapper() {
-        return new VerifiedJwtActorMapper();
+    VerifiedJwtActorMapper verifiedJwtActorMapper(
+            @Value("${payments.security.roles-claim:roles}") String rolesClaim) {
+        return new VerifiedJwtActorMapper(rolesClaim);
     }
 
     @Bean
@@ -53,7 +55,7 @@ public class OidcSecurityConfig {
             @Value("${payments.security.allowed-client-ids:}") String allowedClientIds,
             @Value("${payments.security.jwk-set-uri}") String jwkSetUri,
             @Value("${payments.security.allow-insecure-loopback-jwks:false}")
-                    boolean allowInsecureLoopbackJwks) {
+            boolean allowInsecureLoopbackJwks) {
 
         String validatedJwkSetUri =
                 JwkSetUriPolicy.validate(jwkSetUri, allowInsecureLoopbackJwks);

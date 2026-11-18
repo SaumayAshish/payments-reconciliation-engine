@@ -14,9 +14,27 @@ import org.springframework.security.oauth2.jwt.Jwt;
  */
 public final class VerifiedJwtActorMapper {
 
+    private final String rolesClaimName;
+
+    public VerifiedJwtActorMapper() {
+        this("roles");
+    }
+
+    public VerifiedJwtActorMapper(String rolesClaimName) {
+        Objects.requireNonNull(rolesClaimName, "rolesClaimName");
+
+        if (rolesClaimName.isBlank()
+                || !rolesClaimName.equals(rolesClaimName.trim())) {
+            throw new IllegalArgumentException(
+                    "roles claim name must not be blank or contain surrounding whitespace");
+        }
+
+        this.rolesClaimName = rolesClaimName;
+    }
+
     /**
-     * The current API Actor model has one role. The token must therefore
-     * contain exactly one recognized application role in a JSON roles array.
+     * The current API Actor model has one role. The configured claim must
+     * contain exactly one recognized application role in a JSON array.
      */
     public Actor map(Jwt authenticatedJwt) {
         Objects.requireNonNull(authenticatedJwt, "authenticatedJwt");
@@ -31,7 +49,8 @@ public final class VerifiedJwtActorMapper {
             throw authenticationRequired();
         }
 
-        Object rolesClaim = authenticatedJwt.getClaims().get("roles");
+        Object rolesClaim = authenticatedJwt.getClaims().get(rolesClaimName);
+
         if (!(rolesClaim instanceof List<?> roles)
                 || roles.size() != 1
                 || !(roles.get(0) instanceof String roleName)) {
@@ -45,7 +64,10 @@ public final class VerifiedJwtActorMapper {
             throw accessDenied();
         }
 
-        return new Actor(OidcActorId.fromVerifiedClaims(issuer, subject), role, IdentityProvenance.oidc(issuer));
+        return new Actor(
+                OidcActorId.fromVerifiedClaims(issuer, subject),
+                role,
+                IdentityProvenance.oidc(issuer));
     }
 
     private static ApiException authenticationRequired() {
