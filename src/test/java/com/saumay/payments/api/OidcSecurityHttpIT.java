@@ -106,7 +106,7 @@ class OidcSecurityHttpIT {
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword(),
                 "--payments.security.allow-insecure-loopback-jwks=true",
-                "--payments.security.allowed-client-ids=integration-client",
+                "--payments.security.allowed-client-ids=integration-client,integration-client-two",
                 "--payments.security.issuer=" + ISSUER,
                 "--payments.security.audience=" + AUDIENCE,
                 "--payments.security.jwk-set-uri=" + jwkSetUri);
@@ -884,9 +884,28 @@ class OidcSecurityHttpIT {
         assertTrue(selfApproval.body().contains("SEPARATION_OF_DUTIES_VIOLATION"),
                 selfApproval.body());
 
+        Instant secondClientNow = Instant.now();
+        JWTClaimsSet secondClientClaims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("approval-maker")
+                .claim("roles", List.of("CONTROLLER"))
+                .claim("client_id", "integration-client-two")
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .issueTime(Date.from(secondClientNow))
+                .expirationTime(Date.from(secondClientNow.plusSeconds(600)))
+                .build();
+
+        String makerFromSecondClient = signClaims(secondClientClaims);
+
+        HttpResponse<String> secondClientRead = request(
+                "GET", "/api/v1/exceptions",
+                makerFromSecondClient, null, null, null);
+        assertEquals(200, secondClientRead.statusCode(), secondClientRead.body());
+
         HttpResponse<String> selfRejection = request(
                 "POST", "/api/v1/approvals/" + approvalId + "/reject",
-                maker, checkerId, "application/json", "{\"note\":\"no\"}");
+                makerFromSecondClient, checkerId, "application/json", "{\"note\":\"no\"}");
         assertEquals(403, selfRejection.statusCode(), selfRejection.body());
         assertTrue(selfRejection.body().contains("SEPARATION_OF_DUTIES_VIOLATION"),
                 selfRejection.body());
