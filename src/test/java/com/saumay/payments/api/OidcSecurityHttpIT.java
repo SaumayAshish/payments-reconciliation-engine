@@ -973,7 +973,15 @@ class OidcSecurityHttpIT {
                 rule("PUT", "/api/v1/configuration", "ADMIN"),
                 rule("GET", "/actuator/health", "ADMIN"));
 
+        java.util.Map<?, ?> documentedPaths = documentedApiPaths();
+        assertEveryDocumentedOperationCovered(documentedPaths, rules);
+        assertEveryControllerMappingCovered(rules);
+
         for (AccessRule access : rules) {
+            if (access.path().startsWith("/api/v1/")) {
+                assertDocumentedRoles(access, documentedPaths);
+            }
+
             HttpResponse<String> anonymous = matrixRequest(access, null);
 
             assertEquals(401, anonymous.statusCode(),
@@ -1047,6 +1055,139 @@ class OidcSecurityHttpIT {
                 "GET", "/actuator/health", admin,
                 null, null, null);
         assertEquals(200, allowedHealth.statusCode(), allowedHealth.body());
+    }
+
+    private static java.util.Map<?, ?> documentedApiPaths() throws Exception {
+        try (java.io.Reader reader = java.nio.file.Files.newBufferedReader(
+                java.nio.file.Path.of("docs", "api", "openapi.yaml"))) {
+            Object loaded = new org.yaml.snakeyaml.Yaml().load(reader);
+            assertTrue(loaded instanceof java.util.Map<?, ?>,
+                    "The OpenAPI document must be a mapping");
+
+            Object paths = ((java.util.Map<?, ?>) loaded).get("paths");
+            assertTrue(paths instanceof java.util.Map<?, ?>,
+                    "The OpenAPI document must contain paths");
+
+            return (java.util.Map<?, ?>) paths;
+        }
+    }
+
+    private static void assertDocumentedRoles(
+            AccessRule access, java.util.Map<?, ?> documentedPaths) {
+        int matches = 0;
+        String method = access.method().toLowerCase(java.util.Locale.ROOT);
+
+        for (java.util.Map.Entry<?, ?> entry : documentedPaths.entrySet()) {
+            if (!(entry.getKey() instanceof String template)
+                    || !pathMatchesTemplate(template, access.path())
+                    || !(entry.getValue() instanceof java.util.Map<?, ?> pathItem)) {
+                continue;
+            }
+
+            Object operationValue = pathItem.get(method);
+            if (!(operationValue instanceof java.util.Map<?, ?> operation)) {
+                continue;
+            }
+
+            matches++;
+            Object roleValue = operation.get("x-required-roles");
+            String where = access.method() + " " + access.path();
+
+            assertTrue(roleValue instanceof List<?>,
+                    where + " must document its required roles");
+            assertEquals(
+                    java.util.Set.copyOf(access.roles()),
+                    java.util.Set.copyOf((List<?>) roleValue),
+                    where + " has different roles in OpenAPI and the HTTP test");
+        }
+
+        assertEquals(1, matches,
+                access.method() + " " + access.path()
+                        + " must match exactly one OpenAPI operation");
+    }
+
+    private static boolean pathMatchesTemplate(String template, String actual) {
+        String[] templateSegments = template.split("/", -1);
+        String[] actualSegments = actual.split("/", -1);
+
+        if (templateSegments.length != actualSegments.length) {
+            return false;
+        }
+
+        for (int i = 0; i < templateSegments.length; i++) {
+            String segment = templateSegments[i];
+            boolean parameter = segment.startsWith("{")
+                    && segment.endsWith("}")
+                    && segment.length() > 2;
+
+            if (parameter) {
+                if (actualSegments[i].isEmpty()) {
+                    return false;
+                }
+            } else if (!segment.equals(actualSegments[i])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void assertEveryDocumentedOperationCovered(
+            java.util.Map<?, ?> documentedPaths, List<AccessRule> rules) {
+        java.util.Set<String> methods = java.util.Set.of(
+                "get", "post", "put", "patch", "delete", "head", "options", "trace");
+
+        for (java.util.Map.Entry<?, ?> entry : documentedPaths.entrySet()) {
+            if (!(entry.getKey() instanceof String template)
+                    || !template.startsWith("/api/v1/")
+                    || !(entry.getValue() instanceof java.util.Map<?, ?> pathItem)) {
+                continue;
+            }
+
+            for (Object key : pathItem.keySet()) {
+                if (!(key instanceof String method) || !methods.contains(method)) {
+                    continue;
+                }
+
+                long matches = rules.stream()
+                        .filter(rule -> rule.method().equalsIgnoreCase(method))
+                        .filter(rule -> pathMatchesTemplate(template, rule.path()))
+                        .count();
+
+                assertEquals(1L, matches,
+                        method.toUpperCase(java.util.Locale.ROOT) + " " + template
+                                + " must have exactly one HTTP matrix entry");
+            }
+        }
+    }
+
+    private static void assertEveryControllerMappingCovered(List<AccessRule> rules) {
+        var mappings = context.getBean(
+                "requestMappingHandlerMapping",
+                org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping.class);
+
+        for (var mapping : mappings.getHandlerMethods().keySet()) {
+            for (String template : mapping.getPatternValues()) {
+                if (!template.startsWith("/api/v1/")) {
+                    continue;
+                }
+
+                var methods = mapping.getMethodsCondition().getMethods();
+                assertTrue(!methods.isEmpty(),
+                        template + " must declare its HTTP methods explicitly");
+
+                for (var method : methods) {
+                    long matches = rules.stream()
+                            .filter(rule -> rule.method().equals(method.name()))
+                            .filter(rule -> pathMatchesTemplate(template, rule.path()))
+                            .count();
+
+                    assertEquals(1L, matches,
+                            method.name() + " " + template
+                                    + " must have exactly one HTTP matrix entry");
+                }
+            }
+        }
     }
 
     private static HttpResponse<String> matrixRequest(

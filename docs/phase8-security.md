@@ -123,8 +123,12 @@ differ. See the read-only
 The OpenAPI document declares the bearer JWT scheme. Its optional `X-Actor`
 parameters are retained for compatibility with existing request shapes, but
 the header is ignored for authentication and actor identity. Contract tests
-also check documented roles for selected sensitive routes against the current
-policy.
+check documented roles for selected sensitive routes. The HTTP role-matrix
+test also compares each API route in its matrix with the corresponding
+OpenAPI role declaration before exercising the security chain. The reverse
+check requires every documented API operation and every registered annotated
+Spring MVC mapping under `/api/v1/` to have a matrix entry. Actuator is tested
+by the HTTP matrix but is not part of this OpenAPI comparison.
 
 The test suite includes:
 
