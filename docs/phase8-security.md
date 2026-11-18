@@ -191,3 +191,6 @@ An OIDC startup test verifies that an empty client allowlist prevents startup.
 Client authorization does not prove that two subjects are different people.
 The selected identity provider must still be assessed for stable person
 identities and compatible access-token issuance.
+
+
+Local Keycloak interoperability smoke-test results and their limits are recorded in [Phase 8 Keycloak evidence](phase8-keycloak-evidence.md).

@@ -143,3 +143,5 @@ profile's required claims. The identity provider must issue compatible
 tokens; provider selection and deployment-specific identity and client
 configuration remain open. The initial deployment is planned as a fresh
 deployment without real historical approvals. See [Phase 8 security](docs/phase8-security.md).
+
+Local Keycloak smoke-test evidence: [Phase 8 Keycloak evidence](docs/phase8-keycloak-evidence.md).
