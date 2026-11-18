@@ -232,7 +232,7 @@ Not every concept deserves a table. The rule: persist what must survive a restar
 | MatchingConfiguration (ReconciliationRule, thresholds) | Yes, versioned rows | Each change is a new immutable version, audited |
 | SlaPolicy | Yes, inside the configuration version | Versioned with the rest of the business configuration |
 | SlaClock, SlaBreach | **No** | Derived: computed from `created_business_date`, priority and the as-of date. Storing it would create a second source of truth that can drift. Breach is recorded as an audit event and a state change to `ESCALATED` |
-| User, Role | Phase 8 | Until then an `ActorContext` port supplies an identity (Q-13) |
+| User, Role | OIDC actor context in progress | Verified JWT issuer and subject supply the actor; provider selection and historical identity migration remain open (Q-13) |
 | OutboxEvent | Yes, Phase 7 | Transactional outbox |
 
 ## 7. Database design (proposal)

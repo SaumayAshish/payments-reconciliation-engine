@@ -4,11 +4,22 @@ Maps each BRD requirement to its FRD requirement, planned implementation, planne
 
 Status values: `planned` (designed, no code), `in progress`, `done` (test green in CI, evidence linked). Class and test names are proposals and may change during implementation; the matrix is updated in the same commit.
 
-Phase 4 status: **backend and REST API done (ADR-0007, ADR-0008, ADR-0009); FR-06, FR-07 and FR-12 implemented, except the items that need Phase 5 (audit events for case actions, write-off and adjustment) and Phase 6 (system escalation on SLA breach); awaiting the Phase 4 gate review.**
+Historical Phase 4 status: **backend and REST API done (ADR-0007, ADR-0008, ADR-0009); FR-06, FR-07 and FR-12 implemented, except the items that need Phase 5 (audit events for case actions, write-off and adjustment) and Phase 6 (system escalation on SLA breach); awaiting the Phase 4 gate review.**
 
 Recorded deviation (AC-05.2): review-band exceptions carry the proposed match only, not the top 3 candidates. Ranking three candidates would change the engine output and the Phase 3 hashes, so it is deferred and tracked as technical debt.
 
-Phase 3 status: **FR-01 to FR-05 and FR-10 done; NFR-02, NFR-03 and NFR-04 done; NFR-01 in progress (engine measured, database-backed timing in Phase 10); NFR-05 and NFR-08 in progress; all others planned.**
+Historical Phase 3 status: **FR-01 to FR-05 and FR-10 done; NFR-02, NFR-03 and NFR-04 done; NFR-01 in progress (engine measured, database-backed timing in Phase 10); NFR-05 and NFR-08 in progress; all others planned.**
+
+## Current Phase 8 evidence
+
+The OIDC profile, default-deny behavior, role-matrix HTTP tests, and approval
+identity-provenance controls are implemented. The matrix test compares its API
+routes with OpenAPI declarations and registered annotated controller mappings.
+See `docs/phase8-security.md` for limitations and current test coverage.
+
+Phase 8 remains in progress: the identity provider has not been selected,
+token-purpose enforcement is provider-dependent, and historical legacy
+approvals do not have an automatic OIDC identity migration.
 
 ## Functional requirements
 
@@ -26,7 +37,7 @@ Phase 3 status: **FR-01 to FR-05 and FR-10 done; NFR-02, NFR-03 and NFR-04 done;
 | FR-10 | FRD-10 | Must | `ReconciliationRun`, `CanonicalOutput`, `ReconciliationRunService`, `JdbcRunStore`, `ReconciliationController` (replay endpoint) | `ReconciliationRunTest`, `CanonicalOutputTest`, `MatchingDeterminismTest`, `ReconciliationRunServiceTest`, `JdbcRunStoreIT`, `ReconciliationApiIT`; AC-10.5 holds by construction but has no multi-thread test | CI; identical output hashes across repeats in `docs/benchmarks.md` | 3 | done |
 | FR-11 | FRD-11 | Should | `CaseAgeing`, `AgeingReportService`, `ResolutionReportService`, report readers, `ReportingController`, `SlaEscalationService` | `CaseAgeingTest`, `AgeingReportServiceTest`, `ResolutionReportServiceTest`, `ExceptionApiIT`, `ControlledResolutionApiIT` | `docs/phase6-reporting.md`; `docs/api/openapi.yaml`; full local build passed; CI pending | 6 | gate review in progress |
 | FR-12 | FRD-12 | Should | `ManualMatchRules`, `CaseMatchService`, `JdbcCaseMatchStore`, claim ledger `line_claim` (V5 to V7), `ExceptionController` (match and both unmatch endpoints) | `ManualMatchRulesTest`, `CaseMatchServiceTest`, `JdbcCaseMatchStoreIT` (match, split, bad sums, claimed line, two-thread race with exactly one winner, unmatch, double unmatch), `ClaimSchemaIT`, `JdbcRunClaimsIT`, `ExceptionApiIT` | CI; `docs/api/openapi.yaml`; ADR-0009. AC-12.5 and audit: Phase 5 | 4 | done, except AC-12.5 and audit events |
-| FR-13 | FRD-13 | Could | Transactional outbox in progress; publisher and idempotent consumer pending | Run/outbox rollback and duplicate-completion tests in progress; Kafka failure and duplicate-delivery tests pending | `docs/phase7-events.md`; Phase 7 gate pending | 7 | in progress |
+| FR-13 | FRD-13 | Could | Transactional outbox, opt-in Kafka publisher, and idempotent run-completed consumer | Outbox rollback, Kafka publisher, duplicate-delivery, and consumer integration tests | `docs/phase7-events.md`; CI for commit `c6d9186` | 7 | done |
 | FR-14 | FRD-14 | Could | Thin read-only dashboard | UI smoke test | Screenshot in README | 9 | planned |
 
 ## Non-functional requirements
@@ -49,7 +60,7 @@ These come from the master prompt and are tracked separately so BRD traceability
 | Source | Requirement | Phase | Status |
 | --- | --- | --- | --- |
 | Master 18 | API-first: OpenAPI per endpoint group before implementation | each phase | planned |
-| Master 19 | RBAC and server-side authorization | 8 | planned (Q-13 covers the interim) |
+| Master 19 | RBAC and server-side authorization | 8 | in progress: OIDC authentication, route policies, and authenticated HTTP tests implemented; provider-specific token-purpose and identity-migration work remains |
 | Master 23 | Structured logs with correlation ids | 6 | planned |
 | Master 36 | Consistent error model, no internals leaked | 1 onward | planned |
 | Master 42 | Dependency, secret and container scanning | 11 | planned |

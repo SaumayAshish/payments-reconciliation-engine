@@ -43,7 +43,7 @@ Assumptions are things this FRD takes as true. Open questions are places where t
 | Q-10 | **SLA targets** are not given in the BRD. | Propose by priority, in business days: P1 = 1, P2 = 2, P3 = 5, P4 = 10. "At risk" = 75 percent of the SLA consumed. Configurable. | FRD-06, FRD-11 |
 | Q-11 | **Duplicate upload response.** The BRD example error model suggests an error, but a retry should be safe. | `200 OK` returning the **original ingestion** with `duplicate: true`. No new rows. Reserve the error code for same-hash-different-kind conflicts. | FRD-01 |
 | Q-12 | **Phase plan.** The BRD has six phases over seven weeks. The master prompt has twelve phases including Kafka, security and UI. | Treat the master phases as a finer split of the BRD phases (mapping in [architecture.md](architecture.md#phase-mapping)). Expect the schedule to exceed seven weeks. | Plan |
-| Q-13 | **Actor identity before Phase 8.** Maker-checker (Phase 5) needs distinct users before Spring Security arrives. | Introduce an `ActorContext` port in Phase 5 with a development implementation (header-based identity, never enabled outside the `dev` profile), replaced by real authentication in Phase 8. | FRD-08, FRD-09 |
+| Q-13 | **Actor identity and maker-checker.** Phase 5 needed distinct users before authentication. | Phase 8 uses an OIDC-authenticated actor. The interim header-based development implementation has been removed. Provider selection, the stable-subject contract, and historical identity migration remain open. | FRD-08, FRD-09 |
 
 ## 3. Actors and use cases
 
@@ -199,7 +199,7 @@ Case API error codes (all use the common error body):
 | `CASE_REQUEST_INVALID` | 400 | A case request field is missing or invalid |
 | `MATCH_INVALID` | 422 | The match breaks a manual match rule (sides, size, currency, totals) |
 | `MATCH_LINE_NOT_FOUND` | 422 | A named statement line or ledger entry does not exist |
-| `ACTOR_REQUIRED` | 400 | A write without the `X-Actor` header (interim until Phase 8) |
+| `AUTHENTICATION_REQUIRED` | 401 | A request lacks a valid authenticated identity |
 | `INVALID_FILTER` | 400 | A queue filter value is not valid |
 ## 5. Functional requirements
 
@@ -357,7 +357,7 @@ Everything else is illegal. While a controlled action awaits approval the case s
 
 Edge cases: **EC-07.1** transition by a user lacking the role (rejected, FRD-08 and Phase 8); **EC-07.2** system-driven escalation raced by a manual one (idempotent, second becomes a no-op with a conflict-free outcome).
 
-**Phase 4 as built.** `CaseStatus` holds the 8 legal transitions; the database trigger `guard_exception_case` repeats the rule and requires `version` to rise by exactly 1, so a writer that bypasses the application still cannot make an illegal move. Writes are version-guarded (`UPDATE ... WHERE id = ? AND version = ?`); a stale `expectedVersion` returns `409 CASE_VERSION_CONFLICT` and changes nothing. A case row lock serialises timeline ordinals. Reassignments are kept in `case_assignment`, comments in `case_comment` and the timeline in `case_activity`; all three are append-only. **Deviation:** `case_activity` is the interim record of who did what. The hash-chained audit events of AC-07.1 arrive with FRD-09 in Phase 5. System-driven escalation on SLA breach (EC-07.2) arrives with the SLA job in Phase 6. Until Phase 8 each write names its actor in an `X-Actor` header.
+**Phase 4 as built.** `CaseStatus` holds the 8 legal transitions; the database trigger `guard_exception_case` repeats the rule and requires `version` to rise by exactly 1, so a writer that bypasses the application still cannot make an illegal move. Writes are version-guarded (`UPDATE ... WHERE id = ? AND version = ?`); a stale `expectedVersion` returns `409 CASE_VERSION_CONFLICT` and changes nothing. A case row lock serialises timeline ordinals. Reassignments are kept in `case_assignment`, comments in `case_comment` and the timeline in `case_activity`; all three are append-only. **Deviation:** `case_activity` is the interim record of who did what. The hash-chained audit events of AC-07.1 arrive with FRD-09 in Phase 5. System-driven escalation on SLA breach (EC-07.2) arrives with the SLA job in Phase 6. The original Phase 4 implementation used an `X-Actor` header; the current OIDC path derives the actor from the authenticated token.
 
 ### FRD-08 Maker-checker (FR-08, Must)
 
@@ -378,9 +378,10 @@ Edge cases: **EC-08.1** threshold changed while a request is pending (the thresh
 per-currency threshold snapshot. A pending approval records its configuration
 version; version 0 denotes the built-in defaults. The case is resolved only
 after a different controller approves. Pending requests block manual
-escalation, matching and another controlled resolution. The development actor
-registry is limited to the `dev` profile; other profiles fail closed for these
-controlled endpoints. Full authentication remains Phase 8.
+escalation, matching and another controlled resolution. The former development
+actor registry has been removed. Under the OIDC profile, authenticated maker
+and checker provenance must be compatible; historical legacy identities are
+not automatically mapped to OIDC subjects. See [Phase 8 security](phase8-security.md).
 
 ### FRD-09 Append-only hash-chained audit (FR-09, Must)
 
