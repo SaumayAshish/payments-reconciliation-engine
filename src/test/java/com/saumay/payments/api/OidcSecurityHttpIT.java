@@ -106,6 +106,7 @@ class OidcSecurityHttpIT {
                 "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword(),
                 "--payments.security.allow-insecure-loopback-jwks=true",
+                "--payments.security.allowed-client-ids=integration-client",
                 "--payments.security.issuer=" + ISSUER,
                 "--payments.security.audience=" + AUDIENCE,
                 "--payments.security.jwk-set-uri=" + jwkSetUri);
@@ -293,6 +294,7 @@ class OidcSecurityHttpIT {
                     "--server.port=0",
                     "--spring.profiles.active=oidc",
                     "--payments.security.allow-insecure-loopback-jwks=true",
+                    "--payments.security.allowed-client-ids=integration-client",
                     "--payments.security.issuer=" + ISSUER,
                     "--payments.security.audience=" + AUDIENCE,
                     "--payments.security.jwk-set-uri=http://127.0.0.1:"
@@ -370,6 +372,7 @@ class OidcSecurityHttpIT {
                     "--server.port=0",
                     "--spring.profiles.active=oidc",
                     "--payments.security.allow-insecure-loopback-jwks=true",
+                    "--payments.security.allowed-client-ids=integration-client",
                     "--payments.security.issuer=" + ISSUER,
                     "--payments.security.audience=" + AUDIENCE,
                     "--payments.security.jwk-set-uri=http://127.0.0.1:"
@@ -462,6 +465,7 @@ class OidcSecurityHttpIT {
                     "--server.port=0",
                     "--spring.profiles.active=oidc",
                     "--payments.security.allow-insecure-loopback-jwks=true",
+                    "--payments.security.allowed-client-ids=integration-client",
                     "--payments.security.issuer=" + ISSUER,
                     "--payments.security.audience=" + AUDIENCE,
                     "--payments.security.jwk-set-uri=http://127.0.0.1:"
@@ -558,6 +562,42 @@ class OidcSecurityHttpIT {
 
         assertEquals(before, jdbc.queryForObject(
                 "SELECT count(*) FROM ingestion_file", Integer.class));
+    }
+
+    @Test
+    void rejectsTokenFromUnapprovedClient() throws Exception {
+        Instant now = Instant.now();
+
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("unapproved-client-admin")
+                .claim("roles", List.of("ADMIN"))
+                .claim("client_id", "unapproved-client")
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(600)))
+                .build();
+
+        SignedJWT token = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .keyID(KEY_ID)
+                        .type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
+                        .build(),
+                claims);
+
+        token.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
+
+        HttpResponse<String> rejected = request(
+                "GET",
+                "/api/v1/exceptions",
+                token.serialize(),
+                null,
+                null,
+                null);
+
+        assertEquals(401, rejected.statusCode(), rejected.body());
+        assertTrue(!rejected.body().contains(token.serialize()), rejected.body());
     }
 
     @Test

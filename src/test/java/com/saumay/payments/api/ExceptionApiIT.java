@@ -71,6 +71,7 @@ class ExceptionApiIT {
                 "--server.port=0",
                 "--spring.profiles.active=oidc",
                 "--payments.security.allow-insecure-loopback-jwks=true",
+                "--payments.security.allowed-client-ids=integration-client",
                 "--payments.security.issuer=" + TestOidcIssuer.ISSUER,
                 "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
                 "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),

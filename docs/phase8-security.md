@@ -61,8 +61,8 @@ This change rejects tokens that omit the required access-token type or
 claims, including an otherwise valid JWT with type `JWT`. The eventual
 identity provider must be configured to issue compatible access tokens.
 
-The API checks that `client_id` is present and nonblank; it does not yet
-enforce a client-ID allowlist. Deployment must still verify the provider's
+The API requires a nonblank `client_id` and checks it against the configured
+client-ID allowlist. Deployment must still verify the provider's
 audience, role issuance, subject stability, and client authorization
 contracts. RFC token typing does not establish that two subjects are
 different people.
@@ -173,3 +173,18 @@ working-tree state that was tested.
   audit events and failed audit writes.
 - Complete the Phase 8 security review and verification gate before treating
   the OIDC profile as production-ready.
+
+### Allowed OAuth clients
+
+Set `payments.security.allowed-client-ids` to a comma-separated list of
+authorized OAuth client IDs when starting the `oidc` profile. For example,
+use `--payments.security.allowed-client-ids=dashboard-client,operations-client`.
+
+The configuration must contain at least one nonblank ID. Matching is exact
+and case-sensitive. Tokens for other clients are rejected. Configure actual
+IDs from the chosen identity provider; `integration-client` is only a
+synthetic test fixture.
+
+Client authorization does not prove that two subjects are different people.
+The selected identity provider must still be assessed for stable person
+identities and compatible access-token issuance.

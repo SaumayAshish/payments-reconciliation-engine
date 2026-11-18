@@ -50,6 +50,7 @@ public class OidcSecurityConfig {
     JwtDecoder jwtDecoder(
             @Value("${payments.security.issuer}") String issuer,
             @Value("${payments.security.audience}") String audience,
+            @Value("${payments.security.allowed-client-ids:}") String allowedClientIds,
             @Value("${payments.security.jwk-set-uri}") String jwkSetUri,
             @Value("${payments.security.allow-insecure-loopback-jwks:false}")
                     boolean allowInsecureLoopbackJwks) {
@@ -64,7 +65,16 @@ public class OidcSecurityConfig {
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
                 .build();
 
-        decoder.setJwtValidator(new TrustedJwtValidator(issuer, audience));
+        var trustedToken = new TrustedJwtValidator(issuer, audience);
+        var allowedClient = new AllowedClientValidator(allowedClientIds);
+
+        decoder.setJwtValidator(token -> {
+            var result = trustedToken.validate(token);
+            if (result.hasErrors()) {
+                return result;
+            }
+            return allowedClient.validate(token);
+        });
         return decoder;
     }
 
