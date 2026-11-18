@@ -140,5 +140,6 @@ See [Phase 8 security](docs/phase8-security.md).
 
 The OIDC resource server requires RFC 9068-typed JWT access tokens and the
 profile's required claims. The identity provider must issue compatible
-tokens; provider selection, deployment-specific client configuration, and
-historical identity migration remain open. See [Phase 8 security](docs/phase8-security.md).
+tokens; provider selection and deployment-specific identity and client
+configuration remain open. The initial deployment is planned as a fresh
+deployment without real historical approvals. See [Phase 8 security](docs/phase8-security.md).

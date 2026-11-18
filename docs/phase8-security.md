@@ -119,9 +119,11 @@ prove different people if the provider can issue multiple subjects to one
 person. This requirement is an operational identity-provider contract; the
 application cannot establish it from a token alone.
 
-Historical legacy identities are not automatically linked to OIDC subjects.
-Existing legacy pending approvals need a separately designed and verified
-migration or operational resolution. Do not infer that two identifiers
+The initial deployment is planned as a fresh deployment with no real
+historical approvals. Historical legacy identities are not automatically
+linked to OIDC subjects. If legacy pending approvals are encountered,
+they need a separately designed and verified migration or operational
+resolution before an OIDC decision can be made. Do not infer that two identifiers
 represent different people merely because their identity schemes or issuers
 differ. See the read-only
 [identity-migration assessment runbook](identity-migration-runbook.md).
@@ -167,8 +169,9 @@ working-tree state that was tested.
 
 - Review the complete route policy and token contract against deployment
   requirements, including the identity provider's stable-subject guarantee.
-- Design and verify a safe operational approach for historical legacy
-  approvals and actor identity migration.
+- Before the initial rollout, confirm that the target deployment is fresh
+  and contains no real historical approvals. A future legacy deployment
+  requires a separately designed and verified migration procedure.
 - Review the operational handling and monitoring of provenance-mismatch
   audit events and failed audit writes.
 - Complete the Phase 8 security review and verification gate before treating

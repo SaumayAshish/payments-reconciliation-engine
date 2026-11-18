@@ -3,6 +3,14 @@
 Status: assessment procedure. This document does not define or authorize an
 identity migration, direct database edits, or an alternative approval path.
 
+## Initial deployment decision
+
+The initial deployment is planned as a fresh deployment with no real
+historical approvals. Confirm this assumption for the target environment
+before rollout. If legacy approvals are present, this runbook supports
+assessment only; a migration or operational resolution must be designed
+and verified separately.
+
 ## When to use this
 
 Use this procedure when an approval decision returns

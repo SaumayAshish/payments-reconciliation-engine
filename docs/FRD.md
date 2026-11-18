@@ -43,7 +43,7 @@ Assumptions are things this FRD takes as true. Open questions are places where t
 | Q-10 | **SLA targets** are not given in the BRD. | Propose by priority, in business days: P1 = 1, P2 = 2, P3 = 5, P4 = 10. "At risk" = 75 percent of the SLA consumed. Configurable. | FRD-06, FRD-11 |
 | Q-11 | **Duplicate upload response.** The BRD example error model suggests an error, but a retry should be safe. | `200 OK` returning the **original ingestion** with `duplicate: true`. No new rows. Reserve the error code for same-hash-different-kind conflicts. | FRD-01 |
 | Q-12 | **Phase plan.** The BRD has six phases over seven weeks. The master prompt has twelve phases including Kafka, security and UI. | Treat the master phases as a finer split of the BRD phases (mapping in [architecture.md](architecture.md#phase-mapping)). Expect the schedule to exceed seven weeks. | Plan |
-| Q-13 | **Actor identity and maker-checker.** Phase 5 needed distinct users before authentication. | Phase 8 uses an OIDC-authenticated actor. The interim header-based development implementation has been removed. Provider selection, the stable-subject contract, and historical identity migration remain open. | FRD-08, FRD-09 |
+| Q-13 | **Actor identity and maker-checker.** Phase 5 needed distinct users before authentication. | Phase 8 uses an OIDC-authenticated actor. The interim header-based development implementation has been removed. Provider selection and the stable-subject contract remain open. The initial deployment is planned without real historical approvals; migration is not provided for later legacy data. | FRD-08, FRD-09 |
 
 ## 3. Actors and use cases
 

@@ -17,9 +17,10 @@ identity-provenance controls are implemented. The matrix test compares its API
 routes with OpenAPI declarations and registered annotated controller mappings.
 See `docs/phase8-security.md` for limitations and current test coverage.
 
-Phase 8 remains in progress: the identity provider has not been selected,
-token-purpose enforcement is provider-dependent, and historical legacy
-approvals do not have an automatic OIDC identity migration.
+Phase 8 remains in progress: RFC 9068 token typing and an explicit client
+allowlist are implemented, but an identity provider has not been selected
+or verified. The initial deployment is planned without real historical
+approvals; automatic legacy-to-OIDC identity migration is not provided.
 
 ## Functional requirements
 
@@ -60,7 +61,7 @@ These come from the master prompt and are tracked separately so BRD traceability
 | Source | Requirement | Phase | Status |
 | --- | --- | --- | --- |
 | Master 18 | API-first: OpenAPI per endpoint group before implementation | each phase | planned |
-| Master 19 | RBAC and server-side authorization | 8 | in progress: OIDC authentication, route policies, and authenticated HTTP tests implemented; provider-specific token-purpose and identity-migration work remains |
+| Master 19 | RBAC and server-side authorization | 8 | in progress: OIDC authentication, RFC 9068 token validation, client allowlist, route policies, and authenticated HTTP tests implemented; provider selection and deployment verification remain |
 | Master 23 | Structured logs with correlation ids | 6 | planned |
 | Master 36 | Consistent error model, no internals leaked | 1 onward | planned |
 | Master 42 | Dependency, secret and container scanning | 11 | planned |
