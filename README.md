@@ -135,3 +135,10 @@ tests and must not be enabled in production. See
 The configured OIDC issuer must be an HTTPS URL without query, fragment, or
 user information. It is compared exactly and is limited to 2,048 characters.
 See [Phase 8 security](docs/phase8-security.md).
+
+### RFC 9068 access tokens
+
+The OIDC resource server requires RFC 9068-typed JWT access tokens and the
+profile's required claims. The identity provider must issue compatible
+tokens; provider selection, client authorization, and historical identity
+migration remain open. See [Phase 8 security](docs/phase8-security.md).

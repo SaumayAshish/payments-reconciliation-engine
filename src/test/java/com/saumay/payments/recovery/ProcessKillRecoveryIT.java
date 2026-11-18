@@ -112,6 +112,8 @@ class ProcessKillRecoveryIT {
         java.time.Instant now = java.time.Instant.now();
         com.nimbusds.jwt.JWTClaimsSet claims =
                 new com.nimbusds.jwt.JWTClaimsSet.Builder()
+                        .jwtID(java.util.UUID.randomUUID().toString())
+                        .claim("client_id", "integration-client")
                         .issuer(ISSUER)
                         .audience(AUDIENCE)
                         .subject("recovery-test-admin")
@@ -123,6 +125,7 @@ class ProcessKillRecoveryIT {
         com.nimbusds.jwt.SignedJWT jwt = new com.nimbusds.jwt.SignedJWT(
                 new com.nimbusds.jose.JWSHeader.Builder(
                         com.nimbusds.jose.JWSAlgorithm.RS256)
+                        .type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(KEY_ID)
                         .build(),
                 claims);

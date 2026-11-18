@@ -96,6 +96,7 @@ class TrustedJwtValidatorTest {
     private static NimbusJwtDecoder decoder() {
         NimbusJwtDecoder decoder = NimbusJwtDecoder
                 .withPublicKey((RSAPublicKey) trustedKey.getPublic())
+                .validateType(false)
                 .build();
         decoder.setJwtValidator(new TrustedJwtValidator(ISSUER, AUDIENCE));
         return decoder;
@@ -109,6 +110,8 @@ class TrustedJwtValidatorTest {
             Instant expiresAt) throws Exception {
 
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(issuer)
                 .audience(audience)
                 .subject(subject)
@@ -119,7 +122,9 @@ class TrustedJwtValidatorTest {
         }
 
         SignedJWT jwt = new SignedJWT(
-                new JWSHeader(JWSAlgorithm.RS256),
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
+                        .build(),
                 claims.build());
 
         jwt.sign(new RSASSASigner((RSAPrivateKey) key.getPrivate()));

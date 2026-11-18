@@ -17,10 +17,19 @@ public final class TrustedJwtValidator implements OAuth2TokenValidator<Jwt> {
     private final String audience;
     private final OAuth2TokenValidator<Jwt> standardValidator;
 
+    @SuppressWarnings("unchecked")
     public TrustedJwtValidator(String issuer, String audience) {
         this.audience = required(audience, "audience");
-        this.standardValidator = JwtValidators.createDefaultWithIssuer(
-                IssuerUriPolicy.validate(issuer));
+        String validatedIssuer = IssuerUriPolicy.validate(issuer);
+        var accessTokenValidator = JwtValidators.createAtJwtValidator()
+                .issuer(validatedIssuer)
+                .audience(this.audience)
+                .build();
+
+        this.standardValidator = JwtValidators.createDefaultWithValidators(
+                new org.springframework.security.oauth2.jwt.JwtTypeValidator(
+                        "at+jwt", "application/at+jwt"),
+                accessTokenValidator);
     }
 
     @Override
@@ -36,6 +45,10 @@ public final class TrustedJwtValidator implements OAuth2TokenValidator<Jwt> {
         if (token.getExpiresAt() == null
                 || token.getSubject() == null
                 || token.getSubject().isBlank()
+                || !(token.getClaims().get("jti") instanceof String tokenId)
+                || tokenId.isBlank()
+                || !(token.getClaims().get("client_id") instanceof String clientId)
+                || clientId.isBlank()
                 || audiences == null
                 || !audiences.contains(audience)) {
             return OAuth2TokenValidatorResult.failure(

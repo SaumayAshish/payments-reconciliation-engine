@@ -60,6 +60,7 @@ public class OidcSecurityConfig {
         NimbusJwtDecoder decoder = NimbusJwtDecoder
                 .withJwkSetUri(validatedJwkSetUri)
                 .restOperations(jwkRestTemplate())
+                .validateType(false)
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
                 .build();
 

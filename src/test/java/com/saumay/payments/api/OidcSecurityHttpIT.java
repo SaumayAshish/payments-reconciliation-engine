@@ -177,6 +177,9 @@ class OidcSecurityHttpIT {
         Instant now = Instant.now();
 
         JWTClaimsSet futureNotBefore = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .audience(AUDIENCE)
                 .subject("claim-test-admin")
@@ -186,6 +189,9 @@ class OidcSecurityHttpIT {
                 .build();
 
         JWTClaimsSet missingExpiry = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .audience(AUDIENCE)
                 .subject("claim-test-admin")
@@ -193,6 +199,9 @@ class OidcSecurityHttpIT {
                 .build();
 
         JWTClaimsSet missingSubject = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .audience(AUDIENCE)
                 .claim("roles", List.of("ADMIN"))
@@ -200,6 +209,9 @@ class OidcSecurityHttpIT {
                 .build();
 
         JWTClaimsSet missingAudience = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .subject("claim-test-admin")
                 .claim("roles", List.of("ADMIN"))
@@ -498,6 +510,9 @@ class OidcSecurityHttpIT {
         Instant now = Instant.now();
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .audience(AUDIENCE)
                 .subject("algorithm-test-admin")
@@ -507,14 +522,14 @@ class OidcSecurityHttpIT {
                 .build();
 
         SignedJWT rs384 = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS384)
+                new JWSHeader.Builder(JWSAlgorithm.RS384).type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(KEY_ID)
                         .build(),
                 claims);
         rs384.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
 
         SignedJWT hs256 = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.HS256)
+                new JWSHeader.Builder(JWSAlgorithm.HS256).type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(KEY_ID)
                         .build(),
                 claims);
@@ -543,6 +558,49 @@ class OidcSecurityHttpIT {
 
         assertEquals(before, jdbc.queryForObject(
                 "SELECT count(*) FROM ingestion_file", Integer.class));
+    }
+
+    @Test
+    void jwtTypeMustIdentifyAnAccessToken() throws Exception {
+        Instant now = Instant.now();
+
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("token-purpose-admin")
+                .claim("roles", List.of("ADMIN"))
+                .claim("client_id", "integration-client")
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(600)))
+                .build();
+
+        SignedJWT accessToken = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .keyID(KEY_ID)
+                        .type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
+                        .build(),
+                claims);
+        accessToken.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
+
+        SignedJWT otherJwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                        .keyID(KEY_ID)
+                        .type(new com.nimbusds.jose.JOSEObjectType("JWT"))
+                        .build(),
+                claims);
+        otherJwt.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
+
+        HttpResponse<String> accepted = request(
+                "GET", "/api/v1/exceptions", accessToken.serialize(),
+                null, null, null);
+        assertEquals(200, accepted.statusCode(), accepted.body());
+
+        HttpResponse<String> rejected = request(
+                "GET", "/api/v1/exceptions", otherJwt.serialize(),
+                null, null, null);
+        assertEquals(401, rejected.statusCode(), rejected.body());
+        assertTrue(!rejected.body().contains(otherJwt.serialize()), rejected.body());
     }
 
     @Test
@@ -1303,7 +1361,7 @@ class OidcSecurityHttpIT {
 
     private static String signClaims(JWTClaimsSet claims) throws Exception {
         SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                new JWSHeader.Builder(JWSAlgorithm.RS256).type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(KEY_ID)
                         .build(),
                 claims);
@@ -1315,6 +1373,9 @@ class OidcSecurityHttpIT {
     private static String tokenWithKeyId(KeyPair key, String keyId) throws Exception {
         Instant now = Instant.now();
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .audience(AUDIENCE)
                 .subject("rotation-test-admin")
@@ -1324,7 +1385,7 @@ class OidcSecurityHttpIT {
                 .build();
 
         SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                new JWSHeader.Builder(JWSAlgorithm.RS256).type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(keyId)
                         .build(),
                 claims);
@@ -1342,6 +1403,9 @@ class OidcSecurityHttpIT {
             Instant expiresAt) throws Exception {
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issueTime(Date.from(Instant.now()))
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(issuer)
                 .audience(audience)
                 .subject(subject)
@@ -1351,7 +1415,7 @@ class OidcSecurityHttpIT {
                 .build();
 
         SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                new JWSHeader.Builder(JWSAlgorithm.RS256).type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(KEY_ID)
                         .build(),
                 claims);

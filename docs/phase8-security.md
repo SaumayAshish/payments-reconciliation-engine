@@ -49,15 +49,23 @@ These tests do not establish immediate revocation of a removed key:
 deployments must account for decoder caching, token lifetime, and their
 identity provider's key-rotation procedures.
 
-### Token-purpose limitation
+### Access-token contract
 
-The current validator does not independently require a token type, scope, or
-authorized-party claim that distinguishes an access token from an ID token.
-A token that satisfies the configured signature, issuer, audience, time,
-subject, and role checks can be accepted regardless of its intended purpose.
-The deployment must verify that its identity-provider and audience contract
-prevents tokens issued for another purpose from satisfying these checks.
-Token-purpose enforcement remains part of the Phase 8 security review.
+The API requires the RFC 9068 JWT access-token profile. In addition to
+signature, issuer, audience and timestamp checks, it requires an access-token
+`typ` value and the required `exp`, `sub`, `iat`, `jti`, and `client_id`
+claims. The application additionally requires nonblank `sub`, `jti`, and
+`client_id` strings and its single recognized application role.
+
+This change rejects tokens that omit the required access-token type or
+claims, including an otherwise valid JWT with type `JWT`. The eventual
+identity provider must be configured to issue compatible access tokens.
+
+The API checks that `client_id` is present and nonblank; it does not yet
+enforce a client-ID allowlist. Deployment must still verify the provider's
+audience, role issuance, subject stability, and client authorization
+contracts. RFC token typing does not establish that two subjects are
+different people.
 
 When `oidc` is not active, the application denies HTTP access by default,
 including Actuator. Selecting `dev` or supplying the former

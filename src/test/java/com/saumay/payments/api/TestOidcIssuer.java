@@ -68,6 +68,8 @@ final class TestOidcIssuer implements AutoCloseable {
         Instant now = Instant.now();
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .jwtID(java.util.UUID.randomUUID().toString())
+                .claim("client_id", "integration-client")
                 .issuer(ISSUER)
                 .audience(AUDIENCE)
                 .subject(subject)
@@ -77,7 +79,7 @@ final class TestOidcIssuer implements AutoCloseable {
                 .build();
 
         SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.RS256)
+                new JWSHeader.Builder(JWSAlgorithm.RS256).type(new com.nimbusds.jose.JOSEObjectType("at+jwt"))
                         .keyID(KEY_ID)
                         .build(),
                 claims);
