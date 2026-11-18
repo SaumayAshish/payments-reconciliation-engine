@@ -129,3 +129,9 @@ redirects. The integration suite checks discovery of a newly published
 signing key. An explicit loopback-only HTTP exception is available for local
 tests and must not be enabled in production. See
 [Phase 8 security](docs/phase8-security.md).
+
+### OIDC issuer configuration
+
+The configured OIDC issuer must be an HTTPS URL without query, fragment, or
+user information. It is compared exactly and is limited to 2,048 characters.
+See [Phase 8 security](docs/phase8-security.md).

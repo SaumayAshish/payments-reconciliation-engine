@@ -20,7 +20,7 @@ public final class TrustedJwtValidator implements OAuth2TokenValidator<Jwt> {
     public TrustedJwtValidator(String issuer, String audience) {
         this.audience = required(audience, "audience");
         this.standardValidator = JwtValidators.createDefaultWithIssuer(
-                required(issuer, "issuer"));
+                IssuerUriPolicy.validate(issuer));
     }
 
     @Override

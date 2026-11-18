@@ -494,6 +494,58 @@ class OidcSecurityHttpIT {
     }
 
     @Test
+    void unsupportedSigningAlgorithmsCannotWriteIngestionData() throws Exception {
+        Instant now = Instant.now();
+
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .audience(AUDIENCE)
+                .subject("algorithm-test-admin")
+                .claim("roles", List.of("ADMIN"))
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(600)))
+                .build();
+
+        SignedJWT rs384 = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS384)
+                        .keyID(KEY_ID)
+                        .build(),
+                claims);
+        rs384.sign(new RSASSASigner((RSAPrivateKey) trustedKey.getPrivate()));
+
+        SignedJWT hs256 = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.HS256)
+                        .keyID(KEY_ID)
+                        .build(),
+                claims);
+        hs256.sign(new com.nimbusds.jose.crypto.MACSigner(new byte[32]));
+
+        String unsecured = new com.nimbusds.jwt.PlainJWT(claims).serialize();
+
+        List<String> unsupported = List.of(
+                rs384.serialize(), hs256.serialize(), unsecured);
+
+        Integer before = jdbc.queryForObject(
+                "SELECT count(*) FROM ingestion_file", Integer.class);
+
+        String statement = String.join("\n",
+                CSV_HEADER,
+                "ACC-ALG,,2026-10-09,10.00,GBP,ALG-TEST,Example,payment");
+
+        for (String bearer : unsupported) {
+            HttpResponse<String> response = request(
+                    "POST", "/api/v1/ingestions/statements",
+                    bearer, null, "text/csv", statement);
+
+            assertEquals(401, response.statusCode(), response.body());
+            assertTrue(!response.body().contains(bearer), response.body());
+        }
+
+        assertEquals(before, jdbc.queryForObject(
+                "SELECT count(*) FROM ingestion_file", Integer.class));
+    }
+
+    @Test
     void validRoleCanReadButCannotPerformAdminOperation() throws Exception {
         String analyst = token(
                 trustedKey, ISSUER, AUDIENCE, "analyst-user",

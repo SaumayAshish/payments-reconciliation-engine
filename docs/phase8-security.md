@@ -14,6 +14,10 @@ is active. The profile requires these deployment properties:
 - `payments.security.audience`
 - `payments.security.jwk-set-uri`
 
+The configured issuer must be an HTTPS URL without query, fragment, or user
+information, and must be at most 2,048 characters. Its exact value is
+preserved for claim comparison and actor identity derivation.
+
 The configured decoder accepts RS256 signatures and uses
 `TrustedJwtValidator` to check the configured issuer and audience, standard
 time constraints, an expiry, and a nonblank subject. Tokens must contain a
@@ -124,8 +128,9 @@ policy.
 
 The test suite includes:
 
-- Signed-token validation, invalid signature, issuer, audience, expiry,
-  missing required claims, and future `nbf` scenarios.
+- Signed-token validation, invalid signature, unsupported signing algorithms,
+  unsecured JWTs, issuer, audience, expiry, missing required claims, and
+  future `nbf` scenarios.
 - An OIDC HTTP role matrix and representative unknown route and method
   checks.
 - Actor-header spoofing and maker-checker HTTP scenarios.

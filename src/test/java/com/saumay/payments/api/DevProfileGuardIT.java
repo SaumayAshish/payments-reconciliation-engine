@@ -211,6 +211,44 @@ class DevProfileGuardIT {
                 "Startup must reject a remote HTTP JWK endpoint: " + failure);
     }
 
+    @Test
+    void oidcRejectsAnHttpIssuerAtStartup() throws Exception {
+        try (TestOidcIssuer issuer = new TestOidcIssuer()) {
+            Exception failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    Exception.class,
+                    () -> {
+                        try (ConfigurableApplicationContext rejected = SpringApplication.run(
+                                PaymentsApplication.class,
+                                "--server.port=0",
+                                "--spring.profiles.active=oidc",
+                                "--payments.security.allow-insecure-loopback-jwks=true",
+                                "--payments.security.issuer=http://identity.example.test",
+                                "--payments.security.audience=" + TestOidcIssuer.AUDIENCE,
+                                "--payments.security.jwk-set-uri=" + issuer.jwkSetUri(),
+                                "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                                "--spring.datasource.username=" + postgres.getUsername(),
+                                "--spring.datasource.password=" + postgres.getPassword())) {
+                            rejected.getId();
+                        }
+                    });
+
+            boolean foundPolicyError = false;
+            Throwable current = failure;
+
+            while (current != null) {
+                if (current.getMessage() != null
+                        && current.getMessage().contains("OIDC issuer must be an HTTPS URL")) {
+                    foundPolicyError = true;
+                    break;
+                }
+                current = current.getCause();
+            }
+
+            assertTrue(foundPolicyError,
+                    "Startup must reject an HTTP issuer: " + failure);
+        }
+    }
+
     private static void assertDenied(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
                 .GET()
